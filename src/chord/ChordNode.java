@@ -1,13 +1,13 @@
 package chord;
 
-import utils.Pair;
-
-import java.net.InetSocketAddress;
-import java.util.List;
+import java.util.HashMap;
 
 public class ChordNode {
-    private int id;
-    private List<Pair<Integer, InetSocketAddress>> fingers;
+    private int id;  // The peer's unique identifier
+    private int m;   // Number of bits of the addressing space
+    private HashMap<Integer, ChordNode> fingerTable;
+    private ChordNode predecessor;
+    private ChordNode successor;
 
     public ChordNode() {
 
@@ -22,18 +22,28 @@ public class ChordNode {
     }
 
     public void notify(int id) {
+
     }
 
     public void fix_fingers() {
 
     }
 
-    public void closestPrecidingNode(int id) {
+    public ChordNode closestPrecidingNode(int id) {
+        for (int i = m; i >= 1; i--)
+            if (fingerTable.get(i).id > this.id && fingerTable.get(i).id < id)
+                return fingerTable.get(i);
 
+        return this;
     }
 
-    public void findSuccessor(int id) {
+    public ChordNode findSuccessor(int id) {
+        if (id > this.id && id < successor.id)
+            return successor;
 
+        else
+            // Forward the query around the circle
+            return closestPrecidingNode(id).findSuccessor(id);
     }
 
     public void checkPredecessor() {
