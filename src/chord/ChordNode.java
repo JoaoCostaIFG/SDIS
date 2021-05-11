@@ -1,30 +1,43 @@
 package chord;
 
+import peer.Peer;
+
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.HashMap;
-
+import java.util.ArrayList;
+import java.util.List;
 
 public class ChordNode {
-    private int id;                     // The peer's unique identifier
-    private int m;                      // Number of bits of the addressing space
-    private InetSocketAddress address;  // The peer's network address;
-    private final HashMap<Integer, ChordNode> fingerTable = new HashMap<>();
+    private final int id;                        // The peer's unique identifier
+    private final int m;                         // Number of bits of the addressing space
+    private final InetSocketAddress address;     // The peer's network address;
+    private final List<ChordNode> fingerTable = new ArrayList<>();
+    private int next;
     private ChordNode predecessor;
     private ChordNode successor;
+    private Peer peer;
 
     public ChordNode(InetSocketAddress address, int m) {
+        this.address = address;
         id = Math.floorMod(sha1(address.toString()), m);
         this.m = m;
         successor = this;
     }
 
-    public void join(ChordNode node) {
-        successor = node.findSuccessor(id);
+    /**
+     * Make the node join a Chord ring, with n as its sucessor
+     */
+    public void join(ChordNode n) {
+        successor = n.findSuccessor(id);
     }
 
+    /**
+     * Called periodically.
+     * The node asks the successor about its predecessor, verifies if its immediate successor is consistent,
+     * and tells the successor about it
+     */
     public void stabilize() {
         ChordNode x = successor.getPredecessor();
 
@@ -34,18 +47,29 @@ public class ChordNode {
         successor.notify(this);
     }
 
-    public void notify(ChordNode node) {
-        if (predecessor == null || (node.id > predecessor.id && node.id < this.id))
-            predecessor = node;
+    /**
+     * Node n thinks it might be our predecessor.
+     */
+    public void notify(ChordNode n) {
+        if (predecessor == null || (n.id > predecessor.id && n.id < this.id))
+            predecessor = n;
     }
 
     /**
      * Called periodically. refreshes finger table entries.
      */
-    public void fix_fingers() {
+    public void fixFingers() {
+        next++;
 
+        if (next > m)
+            next = 1;
+
+        fingerTable.set(next, findSuccessor(id + (int) Math.pow(2, next - 1)));
     }
 
+    /**
+     * Search the local table for the highest predecessor of id
+     */
     public ChordNode closestPrecidingNode(int id) {
         // Search the local table for the highest predecessor of id
         for (int i = m; i >= 1; i--)
@@ -55,6 +79,9 @@ public class ChordNode {
         return this;
     }
 
+    /**
+     * Ask node n to find the successor of id
+     */
     public ChordNode findSuccessor(int id) {
         if (id > this.id && id < successor.id)
             return successor;
@@ -68,6 +95,10 @@ public class ChordNode {
      * Called periodically. checks whether predecessor has failed.
      */
     public void checkPredecessor() {
+
+    }
+
+    public void lookup() {
 
     }
 

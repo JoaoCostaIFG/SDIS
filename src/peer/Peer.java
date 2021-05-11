@@ -1,3 +1,5 @@
+package peer;
+
 import file.DigestFile;
 import message.*;
 import sender.*;
