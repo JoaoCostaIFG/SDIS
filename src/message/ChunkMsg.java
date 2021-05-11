@@ -14,20 +14,23 @@ public class ChunkMsg extends Message {
     public ChunkMsg(String version, String id, String fileId, int chunkNo, byte[] chunk) {
         super(version, id, fileId);
         this.header = version + " " +
-                type + " " +
-                id + " " +
-                fileId + " " +
-                chunkNo + " " +
-                Message.CRLF + Message.CRLF;
+            type + " " +
+            id + " " +
+            fileId + " " +
+            chunkNo + " " +
+            Message.CRLF + Message.CRLF;
         this.chunkNo = chunkNo;
         this.chunk = chunk;
     }
 
     public ChunkMsg(String version, String id, String fileId, int chunkNo) {
         this(version, id, fileId, chunkNo, new byte[0]);
+
         try {
             this.chunk = DigestFile.readChunk(fileId, chunkNo);
-        } catch (IOException e) {
+        }
+
+        catch (IOException e) {
             e.printStackTrace(); // TODO Fail if chunk isn't here
         }
     }
@@ -55,7 +58,7 @@ public class ChunkMsg extends Message {
         byte[] bodyBytes = this.chunk;
 
         return ByteBuffer.allocate(headerBytes.length + bodyBytes.length)
-                .put(headerBytes).put(bodyBytes).array();
+            .put(headerBytes).put(bodyBytes).array();
     }
 
     @Override
