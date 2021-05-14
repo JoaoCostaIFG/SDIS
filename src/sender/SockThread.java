@@ -2,10 +2,6 @@ package sender;
 
 import message.Message;
 
-import javax.net.ssl.SSLServerSocket;
-import javax.net.ssl.SSLServerSocketFactory;
-import javax.net.ssl.SSLSocket;
-import javax.net.ssl.SSLSocketFactory;
 import java.io.*;
 import java.net.*;
 import java.util.Arrays;
@@ -29,7 +25,7 @@ public class SockThread implements Runnable {
     private final ExecutorService threadPool =
             Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
     private final String name;
-    private final SSLServerSocket serverSocket;
+    private final ServerSocket serverSocket;
     private final InetAddress ip;
     private final Integer port;
     private MessageHandler handler;
@@ -39,9 +35,10 @@ public class SockThread implements Runnable {
         this.ip = ip;
         this.port = port;
 
-        this.serverSocket =
-                (SSLServerSocket) SSLServerSocketFactory.getDefault().createServerSocket(port, MAX_CONNS, ip);
-        this.serverSocket.setEnabledCipherSuites(CYPHER_SUITES);
+        // this.serverSocket =
+        //        (SSLServerSocket) SSLServerSocketFactory.getDefault().createServerSocket(port, MAX_CONNS, ip);
+        // this.serverSocket.setEnabledCipherSuites(CYPHER_SUITES);
+        this.serverSocket = new ServerSocket(port, MAX_CONNS, ip);
     }
 
     public String getName() {
@@ -79,9 +76,10 @@ public class SockThread implements Runnable {
         while (running.get()) {
             byte[] packetData = new byte[64000 + 1000];
             int n;
-            SSLSocket socket; // TODO Use threads to accept connections concurrently?
+            // SSLSocket socket; TODO Use threads to accept connections concurrently?
+            Socket socket;
             try {
-                socket = (SSLSocket) serverSocket.accept();
+                socket = serverSocket.accept();
             } catch (IOException e) {
                 System.err.println("Timed out while waiting for answer (Sock thread) " + this);
                 try {
@@ -114,8 +112,9 @@ public class SockThread implements Runnable {
         byte[] packetContent = message.getContent();
         System.out.println("Sent: " + message);
         try {
-            SSLSocket socket = (SSLSocket) SSLSocketFactory.getDefault().createSocket(address, port);
-            socket.setEnabledCipherSuites(CYPHER_SUITES);
+            // SSLSocket socket = (SSLSocket) SSLSocketFactory.getDefault().createSocket(address, port);
+            // socket.setEnabledCipherSuites(CYPHER_SUITES);
+            Socket socket = new Socket(address, port);
             OutputStream socketWriter = socket.getOutputStream();
             socketWriter.write(packetContent);
             socket.close();
