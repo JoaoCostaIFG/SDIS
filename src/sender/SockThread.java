@@ -2,59 +2,39 @@ package sender;
 
 import message.Message;
 
-import java.io.IOException;
-import java.net.DatagramPacket;
-import java.net.InetAddress;
-import java.net.MulticastSocket;
-import java.net.SocketException;
+import javax.net.ssl.SSLServerSocket;
+import javax.net.ssl.SSLServerSocketFactory;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
+import java.io.*;
+import java.net.*;
 import java.util.Arrays;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class SockThread implements Runnable {
+    private static final int MAX_CONNS = 5;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final ExecutorService threadPool =
             Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
     private final String name;
-    private final MulticastSocket sock;
-    private final InetAddress group;
+    private final SSLServerSocket serverSocket;
+    private final InetAddress ip;
     private final Integer port;
-    private boolean inGroup;
     private MessageHandler handler;
 
-    public SockThread(String name, MulticastSocket sock, InetAddress group, Integer port) {
+    public SockThread(String name, InetAddress ip, Integer port) throws IOException {
         this.name = name;
-        this.sock = sock;
-        this.group = group;
+        this.ip = ip;
         this.port = port;
 
-        this.inGroup = false;
-        this.join();
+        this.serverSocket =
+                (SSLServerSocket) SSLServerSocketFactory.getDefault().createServerSocket(port, MAX_CONNS, ip);
     }
 
     public String getName() {
         return this.name;
-    }
-
-    public void join() {
-        if (inGroup) return;
-        try {
-            this.sock.joinGroup(this.group);
-            this.inGroup = true;
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    public void leave() {
-        if (!inGroup) return;
-        try {
-            this.sock.leaveGroup(this.group);
-            this.inGroup = false;
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
     }
 
     public void setHandler(MessageHandler handler) {
@@ -62,9 +42,15 @@ public class SockThread implements Runnable {
     }
 
     public void close() {
-        this.leave();
         this.threadPool.shutdown();
-        this.sock.close();
+
+        try {
+            this.serverSocket.close();
+        }
+
+        catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     public void interrupt() {
@@ -81,10 +67,23 @@ public class SockThread implements Runnable {
         running.set(true);
         while (running.get()) {
             byte[] packetData = new byte[64000 + 1000];
-            DatagramPacket packet = new DatagramPacket(packetData, packetData.length);
+            int n;
+            SSLSocket socket; // TODO Use threads to accept connections concurrently?
+            try {
+                socket = (SSLSocket) serverSocket.accept();
+            } catch (IOException e) {
+                System.err.println("Timed out while waiting for answer (Sock thread) " + this);
+                try {
+                    serverSocket.close();
+                } catch (IOException ioException) {
+                    System.err.println("Failed to close socket (ChunkTCP)");
+                }
+                continue;
+            }
 
             try {
-                this.sock.receive(packet);
+                InputStream socketReader = socket.getInputStream();
+                n = socketReader.read(packetData);
             } catch (SocketException e) {
                 // happens if the blocking call is interrupted
                 break;
@@ -95,39 +94,26 @@ public class SockThread implements Runnable {
 
             this.threadPool.execute(
                     () -> handler.handleMessage(this.getName(),
-                            Arrays.copyOfRange(packet.getData(), 0, packet.getLength()))
+                            Arrays.copyOfRange(packetData, 0, n))
             );
         }
     }
 
-    public void send(Message message) {
+    public void send(Message message, InetAddress address, int port) {
         byte[] packetContent = message.getContent();
         System.out.println("Sent: " + message);
-        DatagramPacket packet = new DatagramPacket(packetContent, packetContent.length, group, port);
-
-        // TODO cul sleep maybe
-        // for (int i = 0; i < 3; ++i) {
-        //     try {
-        //         sock.send(packet);
-        //     } catch (IOException e) {
-        //         try {
-        //             Thread.sleep(new Random().nextInt(400 + 1), 0);
-        //         } catch (InterruptedException interruptedException) {
-        //             break;
-        //         }
-        //         continue;
-        //     }
-        //     break;
-        // }
-
         try {
-            sock.send(packet);
-        } catch (IOException ignored) {
+            SSLSocket socket = (SSLSocket) SSLSocketFactory.getDefault().createSocket(address, port);
+            OutputStream socketWriter = socket.getOutputStream();
+            socketWriter.write(packetContent);
+            socket.close();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
     @Override
     public String toString() {
-        return group + ":" + port + "\n";
+        return ip + ":" + port + "\n";
     }
 }

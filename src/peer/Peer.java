@@ -7,6 +7,7 @@ import state.FileInfo;
 import state.State;
 import utils.Pair;
 
+import javax.net.ssl.SSLSocket;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
@@ -154,7 +155,7 @@ public class Peer implements TestInterface {
     }
 
     private SockThread createSocketThread(String name, InetAddress addr, Integer port) throws IOException {
-        MulticastSocket socket = new MulticastSocket(port);
+        SSLSocket socket = new MulticastSocket(port);
         return new SockThread(name, socket, addr, port);
     }
 

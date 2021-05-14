@@ -11,23 +11,25 @@ import java.util.List;
 
 public class ChordNode {
     private final int id;                        // The peer's unique identifier
-    private final int m;                         // Number of bits of the addressing space
     private final InetSocketAddress address;     // The peer's network address;
     private final List<ChordNode> fingerTable = new ArrayList<>();
+    private final int port;
     private int next;
     private ChordNode predecessor;
     private ChordNode successor;
     private Peer peer;
 
-    public ChordNode(InetSocketAddress address, int m) {
+    public static int m = 127;                         // Number of bits of the addressing space
+
+    public ChordNode(InetSocketAddress address, int port, int numPeers) {
         this.address = address;
-        id = Math.floorMod(sha1(address.toString()), m);
-        this.m = m;
+        this.port = port;
+        this.id = Math.floorMod(sha1(address.toString() + port), m);
         successor = this;
     }
 
     /**
-     * Make the node join a Chord ring, with n as its sucessor
+     * Make the node join a Chord ring, with n as its successor
      */
     public void join(ChordNode n) {
         successor = n.findSuccessor(id);

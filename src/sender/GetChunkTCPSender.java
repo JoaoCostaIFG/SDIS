@@ -18,9 +18,10 @@ public class GetChunkTCPSender extends MessageSender<GetChunkMsg> {
     private ChunkMsg notificationMsg;
     private byte[] response;
 
-    public GetChunkTCPSender(SockThread sockThread, GetChunkMsg message, MessageHandler handler) {
-        super(sockThread, message, handler);
-        this.gotChunk = new AtomicBoolean(false);
+    public GetChunkTCPSender(SockThread sockThread, GetChunkMsg message, MessageHandler handler, InetAddress address,
+                             int port, AtomicBoolean gotChunk) {
+        super(sockThread, message, handler, address, port);
+        this.gotChunk = gotChunk;
     }
 
     public byte[] getResponse() {
