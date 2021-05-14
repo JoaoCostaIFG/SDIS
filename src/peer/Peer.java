@@ -1,5 +1,6 @@
 package peer;
 
+import chord.ChordNode;
 import file.DigestFile;
 import message.*;
 import sender.*;
@@ -7,10 +8,8 @@ import state.FileInfo;
 import state.State;
 import utils.Pair;
 
-import javax.net.ssl.SSLSocket;
 import java.io.IOException;
 import java.net.InetAddress;
-import java.net.MulticastSocket;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.rmi.RemoteException;
@@ -27,16 +26,11 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 
 public class Peer implements TestInterface {
+    private final ChordNode chordNode;
     private boolean closed = false;
     // cmd line arguments
-    private final String protocolVersion;
     private final String id;
     private final String accessPoint;
-    // multicast sockets
-    private final SockThread MCSock;
-    private final SockThread MDBSock;
-    private final SockThread MDRSock;
-    private final MessageHandler messageHandler;
 
     // thread pool
     private final ScheduledExecutorService testAppThreadPool =
@@ -53,33 +47,13 @@ public class Peer implements TestInterface {
         // parse args
         if (args.length != 9) usage();
 
-        this.protocolVersion = args[0];
-        this.id = args[1];
+        this.id = args[0];
         // set the file dir name for the rest of the program (create it if missing)
         // and get info
         DigestFile.setFileDir(this.id);
 
-        this.accessPoint = args[2];
-        // MC
-        InetAddress MC = InetAddress.getByName(args[3]);
-        Integer MCPort = Integer.parseInt(args[4]);
-        this.MCSock = this.createSocketThread("MC", MC, MCPort);
-        // MDB
-        InetAddress MDB = InetAddress.getByName(args[5]);
-        Integer MDBPort = Integer.parseInt(args[6]);
-        this.MDBSock = this.createSocketThread("MDB", MDB, MDBPort);
-        // MDR
-        InetAddress MDR = InetAddress.getByName(args[7]);
-        Integer MDRPort = Integer.parseInt(args[8]);
-        this.MDRSock = this.createSocketThread("MDR", MDR, MDRPort);
-
-        if (this.protocolVersion.equals("2.0")) {
-            if (State.st.isStorageFull()) this.MDBSock.leave();
-            else this.MDBSock.join();
-        }
-
-        this.messageHandler = new MessageHandler(this.id, this.protocolVersion,
-            this.MCSock, this.MDBSock, this.MDRSock);
+        this.accessPoint = args[1];
+        this.chordNode = new ChordNode(InetAddress.getByName(args[2]), Integer.parseInt(args[3]));
 
         System.out.println(this);
         System.out.println("Initialized program.");
@@ -154,10 +128,6 @@ public class Peer implements TestInterface {
         }
     }
 
-    private SockThread createSocketThread(String name, InetAddress addr, Integer port) throws IOException {
-        SSLSocket socket = new MulticastSocket(port);
-        return new SockThread(name, socket, addr, port);
-    }
 
     public void cleanup() {
         if (closed) return;
@@ -177,9 +147,6 @@ public class Peer implements TestInterface {
             }
         }
 
-        this.MCSock.close();
-        this.MDBSock.close();
-        this.MDRSock.close();
         try {
             State.exportMap();
         }
@@ -189,9 +156,7 @@ public class Peer implements TestInterface {
     }
 
     private void mainLoop() {
-        this.MCSock.start();
-        this.MDBSock.start();
-        this.MDRSock.start();
+        this.chordNode.start();
         Scanner scanner = new Scanner(System.in);
         String cmd;
         do {
@@ -225,9 +190,7 @@ public class Peer implements TestInterface {
         } while (!cmd.equalsIgnoreCase("EXIT"));
 
         // shush threads
-        this.MCSock.interrupt();
-        this.MDBSock.interrupt();
-        this.MDRSock.interrupt();
+        this.chordNode.stop();
     }
 
     /* used by the TestApp (RMI) */
@@ -252,10 +215,6 @@ public class Peer implements TestInterface {
                 }
             }
 
-            if (this.protocolVersion.equals("2.0")) {
-                State.st.notToDeleteAnymore(fileId);
-            }
-
             chunks = DigestFile.divideFile(filePath, replicationDegree);
         }
         catch (IOException e) {
@@ -267,9 +226,9 @@ public class Peer implements TestInterface {
             // only backup chunks that don't have the desired replication degree
             if (State.st.isChunkOk(fileId, i)) continue;
 
-            PutChunkMsg putChunkMsg = new PutChunkMsg(this.protocolVersion, this.id,
+            PutChunkMsg putChunkMsg = new PutChunkMsg(this.id,
                 fileId, i, replicationDegree, chunks.get(i));
-            PutChunkSender putChunkSender = new PutChunkSender(this.MDBSock, putChunkMsg, this.messageHandler);
+            PutChunkSender putChunkSender = new PutChunkSender(this.chordNode, putChunkMsg);
             putChunkSender.restart();
         }
 
@@ -304,14 +263,9 @@ public class Peer implements TestInterface {
         // if a chunk is missing)
         List<Pair<Future<?>, MessageSender<? extends Message>>> senders = new ArrayList<>();
         for (int currChunk = 0; currChunk < chunkNo; ++currChunk) {
-            GetChunkMsg msg = new GetChunkMsg(this.protocolVersion, this.id, fileId, currChunk);
+            GetChunkMsg msg = new GetChunkMsg(this.id, fileId, currChunk);
             MessageSender<? extends Message> chunkSender;
-            if (this.protocolVersion.equals("2.0")) {
-                chunkSender = new GetChunkTCPSender(this.MCSock, msg, this.messageHandler);
-            }
-            else {
-                chunkSender = new GetChunkSender(this.MCSock, msg, this.messageHandler);
-            }
+            chunkSender = new GetChunkSender(this.chordNode, msg);
             senders.add(new Pair<>(this.testAppThreadPool.submit(chunkSender), chunkSender));
         }
 
@@ -326,14 +280,8 @@ public class Peer implements TestInterface {
             }
             int chunkNumber;
             byte[] chunk;
-            if (this.protocolVersion.equals("2.0")) {
-                GetChunkTCPSender getChunkTCPSender = (GetChunkTCPSender) sender.p2;
-                chunkNumber = getChunkTCPSender.getMessage().getChunkNo();
-            }
-            else {
-                GetChunkSender getChunkSender = (GetChunkSender) sender.p2;
-                chunkNumber = getChunkSender.getMessage().getChunkNo();
-            }
+            GetChunkSender getChunkSender = (GetChunkSender) sender.p2;
+            chunkNumber = getChunkSender.getMessage().getChunkNo();
 
             if (!sender.p2.getSuccess()) {
                 State.st.rmTask(task);
@@ -341,14 +289,7 @@ public class Peer implements TestInterface {
                     " because of a missing chunk: " + chunkNumber);
             }
 
-            if (this.protocolVersion.equals("2.0")) {
-                GetChunkTCPSender getChunkTCPSender = (GetChunkTCPSender) sender.p2;
-                chunk = getChunkTCPSender.getResponse();
-            }
-            else {
-                GetChunkSender getChunkSender = (GetChunkSender) sender.p2;
-                chunk = getChunkSender.getResponse();
-            }
+            chunk = getChunkSender.getResponse();
             chunks.add(chunk);
         }
 
@@ -366,22 +307,10 @@ public class Peer implements TestInterface {
     }
 
     public String deleteFromId(String fileId) {
-        if (this.protocolVersion.equals("2.0")) {
-            synchronized (State.st) {
-                // has initiated file
-                FileInfo fileInfo = State.st.getFileInfo(fileId);
-                if (fileInfo == null)
-                    return "No information stored about the file with hash " + fileId;
-
-                // update the files to delete structure with everyone we know has this file
-                for (var peer : fileInfo.getPeersStoringFile())
-                    State.st.addUndeletedPair(peer, fileId);
-            }
-        }
         // we don't want the old entry anymore
         State.st.removeFileEntry(fileId);
 
-        DeleteMsg msg = new DeleteMsg(this.protocolVersion, this.id, fileId);
+        DeleteMsg msg = new DeleteMsg(this.id, fileId);
         this.MCSock.send(msg);
 
         return "Success";
@@ -421,8 +350,8 @@ public class Peer implements TestInterface {
                     State.st.setAmStoringChunk(fileId, chunkNo, false);
                     currentCap -= chunkSize;
 
-                    RemovedMsg removedMsg = new RemovedMsg(this.protocolVersion, this.id, fileId, chunkNo);
-                    this.MCSock.send(removedMsg);
+                    RemovedMsg removedMsg = new RemovedMsg(this.id, fileId, chunkNo);
+                    // TODO Create removedMsgSender
                 }
 
                 if (currentCap <= 0)
@@ -467,11 +396,6 @@ public class Peer implements TestInterface {
                     if (currentCap > 0) trimFiles(currentCap, true);
 
                 }
-            }
-
-            if (this.protocolVersion.equals("2.0")) {
-                if (State.st.isStorageFull()) this.MDBSock.leave();
-                else this.MDBSock.join();
             }
         }
 
@@ -536,19 +460,17 @@ public class Peer implements TestInterface {
 
     @Override
     public String toString() {
-        return "Protocol version: " + this.protocolVersion + "\n" +
+        return
             "Id: " + this.id + "\n" +
             "Service access point: " + this.accessPoint + "\n" +
-            "MC: " + this.MCSock +
-            "MDB: " + this.MDBSock +
-            "MDR: " + this.MDRSock;
+            "ChordController: " + this.chordNode;
     }
 
     private static void usage() {
         System.err.println("""
             Usage: java -jar
-            \tProj1 <protocol version> <peer id> <service access point>
-            \t<MC> <MDB> <MDR>""");
+            \tProj1 <peer id> <service access point>
+            \t<ip address> <port>""");
         System.exit(1);
     }
 

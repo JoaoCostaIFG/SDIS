@@ -55,7 +55,6 @@ public class SockThread implements Runnable {
         try {
             this.serverSocket.close();
         }
-
         catch (IOException e) {
             e.printStackTrace();
         }

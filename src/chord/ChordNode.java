@@ -1,7 +1,12 @@
 package chord;
 
+import message.Message;
 import peer.Peer;
+import sender.MessageHandler;
+import sender.SockThread;
 
+import java.io.IOException;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
@@ -11,21 +16,36 @@ import java.util.List;
 
 public class ChordNode {
     private final int id;                        // The peer's unique identifier
-    private final InetSocketAddress address;     // The peer's network address;
-    private final List<ChordNode> fingerTable = new ArrayList<>();
+    private final InetAddress address;     // The peer's network address;
     private final int port;
+    private final List<ChordNode> fingerTable = new ArrayList<>();
+    private final MessageHandler messageHandler;
     private int next;
     private ChordNode predecessor;
     private ChordNode successor;
-    private Peer peer;
+    private SockThread sock;
 
     public static int m = 127;                         // Number of bits of the addressing space
 
-    public ChordNode(InetSocketAddress address, int port, int numPeers) {
+    public ChordNode(InetAddress address, int port) throws IOException {
         this.address = address;
         this.port = port;
         this.id = Math.floorMod(sha1(address.toString() + port), m);
+        this.sock = new SockThread("sock", address, port);
+        this.messageHandler = new MessageHandler(this.id, this.sock);
         successor = this;
+    }
+
+    public void start() {
+        this.sock.start();
+    }
+
+    public void stop() {
+        this.sock.interrupt();
+    }
+
+    public void send(Message message, InetAddress ip, int port) {
+        this.sock.send(message, ip, port);
     }
 
     /**

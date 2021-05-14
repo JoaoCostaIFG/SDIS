@@ -11,23 +11,15 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class MessageHandler {
     private final String selfID;
-    private final String protocolVersion;
     private final MessageCreator messageCreator;
-    private final SockThread MCSock;
-    private final SockThread MDBSock;
-    private final SockThread MDRSock;
+    private final SockThread sock;
     private final ConcurrentHashMap<Observer, Boolean> observers;
 
-    public MessageHandler(String selfID, String protocolVersion, SockThread MCSock, SockThread MDBSock, SockThread MDRSock) {
+    public MessageHandler(String selfID, SockThread sock) {
         this.selfID = selfID;
-        this.protocolVersion = protocolVersion;
-        this.messageCreator = new MessageCreator(protocolVersion);
-        this.MCSock = MCSock;
-        this.MDBSock = MDBSock;
-        this.MDRSock = MDRSock;
-        this.MCSock.setHandler(this);
-        this.MDBSock.setHandler(this);
-        this.MDRSock.setHandler(this);
+        this.messageCreator = new MessageCreator();
+        this.sock = sock;
+        this.sock.setHandler(this);
         this.observers = new ConcurrentHashMap<>();
     }
 
@@ -64,12 +56,6 @@ public class MessageHandler {
                     State.st.incrementChunkDeg(message.getFileId(), message.getChunkNo(), this.selfID);
                     State.st.setAmStoringChunk(message.getFileId(), message.getChunkNo(), true);
                     iStoredTheChunk = true;
-
-                    // unsub MDB when storage is full
-                    if (this.protocolVersion.equals("2.0")) {
-                        if (State.st.isStorageFull()) this.MDBSock.leave();
-                        else this.MDBSock.join();
-                    }
                 }
             } else {
                 iStoredTheChunk = true;
@@ -97,12 +83,6 @@ public class MessageHandler {
             // delete the file on the file system
             // also updates state entry and space filled
             sendIDeleted = DigestFile.deleteFile(message.getFileId());
-
-            if (this.protocolVersion.equals("2.0")) {
-                // unsub MDB when storage is not full
-                if (State.st.isStorageFull()) this.MDBSock.leave();
-                else this.MDBSock.join();
-            }
         }
 
         // send IDELETED when we are 2.0 and the DELETE was 2.0
@@ -242,22 +222,6 @@ public class MessageHandler {
             default:
                 // unreachable
                 break;
-        }
-
-        // see if guy who sents the message has to remove some file
-        if (this.protocolVersion.equals("2.0")) {
-            // inform him of deletion if the peer supports it
-            Set<String> files = State.st.getFilesUndeletedByPeer(message.getSenderId());
-            if (files != null) {
-                for (String fileId : files) {
-                    DeleteMsg deleteMsg = new DeleteMsg(this.protocolVersion, this.selfID, fileId);
-                    this.MCSock.send(deleteMsg);
-                }
-            }
-            // just get rid of his reference otherwise
-            if (!message.getVersion().equals("2.0")) {
-                State.st.ignorePeerDeletedFiles(message.getSenderId());
-            }
         }
     }
 }

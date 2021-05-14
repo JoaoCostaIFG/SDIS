@@ -3,10 +3,7 @@ package message;
 import static java.lang.Integer.parseInt;
 
 public class MessageCreator {
-    final String protocolVersion;
-
-    public MessageCreator(String protocolVersion) {
-        this.protocolVersion = protocolVersion;
+    public MessageCreator() {
     }
 
     public Message createMessage(String[] header, byte[] body) throws NoSuchMessage {
