@@ -16,6 +16,9 @@ public class GetSuccMsg extends ChordMessage {
         this.nodeId = id;
     }
 
+    public int getNodeId() {
+        return nodeId;
+    }
 
     @Override
     public String getType() {

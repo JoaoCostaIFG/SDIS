@@ -1,9 +1,6 @@
 package chord;
 
-import message.Message;
-import message.file.FileMessage;
-import sender.MessageHandler;
-import sender.SockThread;
+import sender.Observer;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -18,11 +15,9 @@ public class ChordNode {
     private final InetAddress address;     // The peer's network address;
     private final int port;
     private final List<ChordNode> fingerTable = new ArrayList<>();
-    private final MessageHandler messageHandler;
     private int next;
     private ChordNode predecessor;
     private ChordNode successor;
-    private SockThread sock;
 
     public static int m = 127;                         // Number of bits of the addressing space
 
@@ -30,8 +25,6 @@ public class ChordNode {
         this.address = address;
         this.port = port;
         this.id = Math.floorMod(sha1(address.toString() + port), m);
-        this.sock = new SockThread("sock", address, port);
-        this.messageHandler = new MessageHandler(this.id, this.sock);
         successor = this;
     }
 
@@ -45,18 +38,6 @@ public class ChordNode {
 
     public int getPort() {
         return port;
-    }
-
-    public void start() {
-        this.sock.start();
-    }
-
-    public void stop() {
-        this.sock.interrupt();
-    }
-
-    public void send(Message message, InetAddress ip, int port) {
-        this.sock.send(message, ip, port);
     }
 
     /**
@@ -116,12 +97,11 @@ public class ChordNode {
      * Ask node n to find the successor of id
      */
     public ChordNode findSuccessor(int id) {
-        if (id > this.id && id < successor.id)
+        if (id > this.id && id <= successor.id)
             return successor;
-
-        else
-            // Forward the query around the circle
+        else { // Forward the query around the circle
             return closestPrecidingNode(id).findSuccessor(id);
+        }
     }
 
     /**
@@ -160,7 +140,6 @@ public class ChordNode {
 
     @Override
     public String toString() {
-        return "Chord id: " + id +
-                "\n" + sock;
+        return "Chord id: " + id;
     }
 }

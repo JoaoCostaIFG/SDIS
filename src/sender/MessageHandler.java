@@ -30,7 +30,7 @@ public class MessageHandler {
         this.observers.remove(obs);
     }
 
-    private void handlePutChunkMsg(PutChunkMsg message) {
+    private void handleMsg(PutChunkMsg message) {
         boolean iStoredTheChunk = false;
         synchronized (State.st) {
             // do not handle files we initiated the backup of
@@ -70,13 +70,13 @@ public class MessageHandler {
         }
     }
 
-    private void handleStoredMsg(StoredMsg message) {
+    private void handleMsg(StoredMsg message) {
         synchronized (State.st) {
             State.st.incrementChunkDeg(message.getFileId(), message.getChunkNo(), message.getSenderId());
         }
     }
 
-    private void handleDeleteMsg(DeleteMsg message) {
+    private void handleMsg(DeleteMsg message) {
         synchronized (State.st) {
             // delete the file on the file system
             // also updates state entry and space filled
@@ -84,7 +84,7 @@ public class MessageHandler {
         }
     }
 
-    private void handleGetChunkMsg(GetChunkMsg message) {
+    private void handleMsg(GetChunkMsg message) {
         synchronized (State.st) {
             if (!State.st.amIStoringChunk(message.getFileId(), message.getChunkNo()))
                 return;
@@ -97,7 +97,7 @@ public class MessageHandler {
 //        chunkSender.run();
     }
 
-    private void handleRemovedMsg(RemovedMsg message) {
+    private void handleMsg(RemovedMsg message) {
         int repDegree;
         boolean amInitiator;
         synchronized (State.st) {
@@ -146,31 +146,20 @@ public class MessageHandler {
             obs.notify(message);
         }
 
-        switch (message.getType()) {
-            case PutChunkMsg.type:
-                handlePutChunkMsg((PutChunkMsg) message);
-                break;
-            case StoredMsg.type:
-                handleStoredMsg((StoredMsg) message);
-                break;
-            case DeleteMsg.type:
-                handleDeleteMsg((DeleteMsg) message);
-                break;
-            case GetChunkMsg.type:
-                handleGetChunkMsg((GetChunkMsg) message);
-                break;
-            case ChunkMsg.type:
-                // skip
-                break;
-            case RemovedMsg.type:
-                handleRemovedMsg((RemovedMsg) message);
-                break;
-            case GetSuccMsg.type:
-                System.err.println("OPA!");
-                break;
-            default:
-                // unreachable
-                break;
+        // unreachable
+        if (PutChunkMsg.class.equals(message.getClass())) {
+            handleMsg((PutChunkMsg) message);
+        } else if (StoredMsg.class.equals(message.getClass())) {
+            handleMsg((StoredMsg) message);
+        } else if (DeleteMsg.class.equals(message.getClass())) {
+            handleMsg((DeleteMsg) message);
+        } else if (GetChunkMsg.class.equals(message.getClass())) {
+            handleMsg((GetChunkMsg) message);
+        } else if (ChunkMsg.class.equals(message.getClass())) { // skoiop
+        } else if (RemovedMsg.class.equals(message.getClass())) {
+            handleMsg((RemovedMsg) message);
+        } else if (GetSuccMsg.class.equals(message.getClass())) {
+            // Notified to chordNode (observable)
         }
     }
 }

@@ -1,3 +1,4 @@
+import chord.ChordController;
 import chord.ChordNode;
 import file.DigestFile;
 import message.chord.GetSuccMsg;
@@ -26,7 +27,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 
 public class Peer implements TestInterface {
-    private final ChordNode chordNode;
+    private final ChordController chordController;
     private boolean closed = false;
     // cmd line arguments
     private final String id;
@@ -53,7 +54,7 @@ public class Peer implements TestInterface {
         DigestFile.setFileDir(this.id);
 
         this.accessPoint = args[1];
-        this.chordNode = new ChordNode(InetAddress.getByName(args[2]), Integer.parseInt(args[3]));
+        this.chordController = new ChordController(InetAddress.getByName(args[2]), Integer.parseInt(args[3]));
 
         System.out.println(this);
         System.out.println("Initialized program.");
@@ -156,7 +157,7 @@ public class Peer implements TestInterface {
     }
 
     private void mainLoop() {
-        this.chordNode.start();
+        this.chordController.start();
         Scanner scanner = new Scanner(System.in);
         String cmd;
         do {
@@ -172,9 +173,13 @@ public class Peer implements TestInterface {
                 String addr = opts[1], port = opts[2];
                 try {
                     InetAddress address = InetAddress.getByName(addr);
-                    chordNode.send(new GetSuccMsg(chordNode), address, Integer.parseInt(port));
+                    ChordNode node = new ChordNode(address, Integer.parseInt(port));
+                    this.chordController.getNode().join(node);
+                    chordController.send(new GetSuccMsg(chordController.getNode()), address, Integer.parseInt(port));
                 } catch (UnknownHostException e) {
                     System.err.println("could not create address " + addr);
+                } catch (IOException e) {
+                    e.printStackTrace();
                 }
             }
             if (cmd.equalsIgnoreCase("backup")) {
@@ -204,7 +209,7 @@ public class Peer implements TestInterface {
         } while (!cmd.equalsIgnoreCase("EXIT"));
 
         // shush threads
-        this.chordNode.stop();
+        this.chordController.stop();
     }
 
     /* used by the TestApp (RMI) */
@@ -476,7 +481,7 @@ public class Peer implements TestInterface {
         return
             "Peer id: " + this.id + "\n" +
             "Service access point: " + this.accessPoint + "\n" +
-            this.chordNode;
+            this.chordController;
     }
 
     private static void usage() {
