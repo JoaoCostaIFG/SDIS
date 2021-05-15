@@ -20,7 +20,7 @@ public class GetChunkTCPSender extends MessageSender<GetChunkMsg> {
 
     public GetChunkTCPSender(SockThread sockThread, GetChunkMsg message, MessageHandler handler, InetAddress address,
                              int port, AtomicBoolean gotChunk) {
-        super(sockThread, message, handler, address, port);
+        super(sockThread, message, handler);
         this.gotChunk = gotChunk;
     }
 

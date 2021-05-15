@@ -26,6 +26,17 @@ public abstract class Message {
         this.fileId = fileId;
     }
 
+    public Message(String id, String fileId) {
+        this.header = version + " " +
+                type + " " +
+                id + " " +
+                fileId + " " +
+                Message.CRLF + Message.CRLF;
+        this.version = version;
+        this.id = id;
+        this.fileId = fileId;
+    }
+
     public String getVersion() {
         return version;
     }

@@ -64,10 +64,10 @@ public class MessageHandler {
 
         // send STORED reply message if we stored the chunk/already had it
         if (iStoredTheChunk) {
-            StoredMsg response = new StoredMsg(this.protocolVersion, this.selfID,
-                    message.getFileId(), message.getChunkNo());
-            StoredSender storedSender = new StoredSender(this.MCSock, response, this);
-            storedSender.run();
+//            StoredMsg response = new StoredMsg(this.protocolVersion, this.selfID,
+//                    message.getFileId(), message.getChunkNo());
+//            StoredSender storedSender = new StoredSender(this.MCSock, response, this);
+//            storedSender.run();
         }
     }
 
@@ -78,27 +78,10 @@ public class MessageHandler {
     }
 
     private void handleDeleteMsg(DeleteMsg message) {
-        boolean sendIDeleted;
         synchronized (State.st) {
             // delete the file on the file system
             // also updates state entry and space filled
-            sendIDeleted = DigestFile.deleteFile(message.getFileId());
-        }
-
-        // send IDELETED when we are 2.0 and the DELETE was 2.0
-        if (sendIDeleted && this.protocolVersion.equals("2.0") && message.getVersion().equals("2.0")) {
-            IDeletedMsg response = new IDeletedMsg(this.protocolVersion, this.selfID, message.getFileId());
-            IDeletedSender iDeletedSender = new IDeletedSender(this.MCSock, response, this);
-            iDeletedSender.run();
-        }
-    }
-
-    private void handleIDeletedMsg(IDeletedMsg message) {
-        // only handle IDELETED messages if we are 2.0
-        if (this.protocolVersion.equals("2.0")) {
-            synchronized (State.st) {
-                State.st.removeUndeletedPair(message.getSenderId(), message.getFileId());
-            }
+            DigestFile.deleteFile(message.getFileId());
         }
     }
 
@@ -108,15 +91,11 @@ public class MessageHandler {
                 return;
         }
 
-        ChunkMsg response = new ChunkMsg(this.protocolVersion, this.selfID,
-                message.getFileId(), message.getChunkNo());
-        MessageSender<? extends Message> chunkSender;
-        if (this.protocolVersion.equals("2.0") && message.getVersion().equals("2.0")) {
-            chunkSender = new ChunkTCPSender(this.MDRSock, response, this);
-        } else {
-            chunkSender = new ChunkSender(this.MDRSock, response, this);
-        }
-        chunkSender.run();
+//        ChunkMsg response = new ChunkMsg(this.protocolVersion, this.selfID,
+//                message.getFileId(), message.getChunkNo());
+//        MessageSender<? extends Message> chunkSender;
+//        chunkSender = new ChunkSender(this.MDRSock, response, this);
+//        chunkSender.run();
     }
 
     private void handleRemovedMsg(RemovedMsg message) {
@@ -143,11 +122,11 @@ public class MessageHandler {
                 chunk = DigestFile.readChunk(message.getFileId(), message.getChunkNo());
             }
 
-            PutChunkMsg putChunkMsg = new PutChunkMsg(this.protocolVersion, this.selfID,
-                    message.getFileId(), message.getChunkNo(), repDegree, chunk);
-            RemovedPutchunkSender removedPutchunkSender = new RemovedPutchunkSender(this.MDBSock, putChunkMsg,
-                    this);
-            removedPutchunkSender.run();
+//            PutChunkMsg putChunkMsg = new PutChunkMsg(this.protocolVersion, this.selfID,
+//                    message.getFileId(), message.getChunkNo(), repDegree, chunk);
+//            RemovedPutchunkSender removedPutchunkSender = new RemovedPutchunkSender(this.MDBSock, putChunkMsg,
+//                    this);
+//            removedPutchunkSender.run();
         } catch (Exception e) {
             e.printStackTrace();
             System.err.println("Failed constructing reply for " + message.getType());
@@ -206,9 +185,6 @@ public class MessageHandler {
                 break;
             case DeleteMsg.type:
                 handleDeleteMsg((DeleteMsg) message);
-                break;
-            case IDeletedMsg.type:
-                handleIDeletedMsg((IDeletedMsg) message);
                 break;
             case GetChunkMsg.type:
                 handleGetChunkMsg((GetChunkMsg) message);

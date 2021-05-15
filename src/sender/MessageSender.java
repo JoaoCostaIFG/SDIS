@@ -1,15 +1,17 @@
 package sender;
 
+import message.ChunkMsg;
 import message.Message;
 
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public abstract class MessageSender<T extends Message> implements Runnable, Observer {
     protected final AtomicBoolean success;
     private final MessageHandler handler;
     private final int port;
-    private final InetAddress address;
+    private InetAddress address;
     protected SockThread sockThread;
     protected T message;
 
@@ -25,8 +27,14 @@ public abstract class MessageSender<T extends Message> implements Runnable, Obse
             this.handler.addObserver(this);
     }
 
-    public MessageSender(SockThread sockThread, T message, MessageHandler handler, InetAddress address, int port) {
-        this(sockThread, message, handler, address, port,true);
+    // TODO Delete this when converting senders to chord, here as a placeholder to compile
+    public MessageSender(SockThread sockThread, T message, MessageHandler handler, boolean wantsNotifications) {
+        this(sockThread, message, handler, null, 0, wantsNotifications);
+    }
+
+    // TODO Delete this when converting senders to chord, here as a placeholder to compile
+    public MessageSender(SockThread sockThread, T message, MessageHandler handler) {
+        this(sockThread, message, handler, null, 0, true);
     }
 
     public boolean getSuccess() {

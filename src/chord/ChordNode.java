@@ -1,13 +1,11 @@
 package chord;
 
 import message.Message;
-import peer.Peer;
 import sender.MessageHandler;
 import sender.SockThread;
 
 import java.io.IOException;
 import java.net.InetAddress;
-import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -19,7 +17,7 @@ public class ChordNode {
     private final InetAddress address;     // The peer's network address;
     private final int port;
     private final List<ChordNode> fingerTable = new ArrayList<>();
-    private final MessageHandler messageHandler;
+    // private final MessageHandler messageHandler;
     private int next;
     private ChordNode predecessor;
     private ChordNode successor;
@@ -32,7 +30,7 @@ public class ChordNode {
         this.port = port;
         this.id = Math.floorMod(sha1(address.toString() + port), m);
         this.sock = new SockThread("sock", address, port);
-        this.messageHandler = new MessageHandler(this.id, this.sock);
+        // this.messageHandler = new MessageHandler(this.id, this.sock);
         successor = this;
     }
 
@@ -145,5 +143,11 @@ public class ChordNode {
         catch (NoSuchAlgorithmException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    @Override
+    public String toString() {
+        return "Chord id: " + id +
+                "\n" + sock;
     }
 }

@@ -1,5 +1,3 @@
-package peer;
-
 import chord.ChordNode;
 import file.DigestFile;
 import message.*;
@@ -45,7 +43,7 @@ public class Peer implements TestInterface {
 
     public Peer(String[] args) throws IOException {
         // parse args
-        if (args.length != 9) usage();
+        if (args.length != 4) usage();
 
         this.id = args[0];
         // set the file dir name for the rest of the program (create it if missing)
@@ -163,6 +161,7 @@ public class Peer implements TestInterface {
             cmd = scanner.nextLine();
             System.out.println("CMD: " + cmd);
             String filePath = "1b.txt";
+            if (cmd.startsWith(""))
             if (cmd.equalsIgnoreCase("backup")) {
                 try {
                     this.backup(filePath, 1);
@@ -226,10 +225,10 @@ public class Peer implements TestInterface {
             // only backup chunks that don't have the desired replication degree
             if (State.st.isChunkOk(fileId, i)) continue;
 
-            PutChunkMsg putChunkMsg = new PutChunkMsg(this.id,
-                fileId, i, replicationDegree, chunks.get(i));
-            PutChunkSender putChunkSender = new PutChunkSender(this.chordNode, putChunkMsg);
-            putChunkSender.restart();
+//            PutChunkMsg putChunkMsg = new PutChunkMsg(this.id,
+//                fileId, i, replicationDegree, chunks.get(i));
+//            PutChunkSender putChunkSender = new PutChunkSender(this.chordNode, putChunkMsg);
+//            putChunkSender.restart();
         }
 
         State.st.rmTask(task);
@@ -263,10 +262,10 @@ public class Peer implements TestInterface {
         // if a chunk is missing)
         List<Pair<Future<?>, MessageSender<? extends Message>>> senders = new ArrayList<>();
         for (int currChunk = 0; currChunk < chunkNo; ++currChunk) {
-            GetChunkMsg msg = new GetChunkMsg(this.id, fileId, currChunk);
-            MessageSender<? extends Message> chunkSender;
-            chunkSender = new GetChunkSender(this.chordNode, msg);
-            senders.add(new Pair<>(this.testAppThreadPool.submit(chunkSender), chunkSender));
+//            GetChunkMsg msg = new GetChunkMsg(this.id, fileId, currChunk);
+//            MessageSender<? extends Message> chunkSender;
+//            chunkSender = new GetChunkSender(this.chordNode, msg);
+//            senders.add(new Pair<>(this.testAppThreadPool.submit(chunkSender), chunkSender));
         }
 
         List<byte[]> chunks = new ArrayList<>(chunkNo);
@@ -310,8 +309,8 @@ public class Peer implements TestInterface {
         // we don't want the old entry anymore
         State.st.removeFileEntry(fileId);
 
-        DeleteMsg msg = new DeleteMsg(this.id, fileId);
-        this.MCSock.send(msg);
+//        DeleteMsg msg = new DeleteMsg(this.id, fileId);
+//        this.MCSock.send(msg);
 
         return "Success";
     }
@@ -350,7 +349,7 @@ public class Peer implements TestInterface {
                     State.st.setAmStoringChunk(fileId, chunkNo, false);
                     currentCap -= chunkSize;
 
-                    RemovedMsg removedMsg = new RemovedMsg(this.id, fileId, chunkNo);
+//                    RemovedMsg removedMsg = new RemovedMsg(this.id, fileId, chunkNo);
                     // TODO Create removedMsgSender
                 }
 
@@ -427,7 +426,6 @@ public class Peer implements TestInterface {
                             .append(" - Perceived rep.: ").append(chunkEntry.getValue().p1.size()).append("\n");
                     }
                 }
-
                 else {
                     for (var chunkEntry : fileInfo.getAllChunks().entrySet()) {
                         int chunkId = chunkEntry.getKey();
@@ -461,16 +459,15 @@ public class Peer implements TestInterface {
     @Override
     public String toString() {
         return
-            "Id: " + this.id + "\n" +
+            "Peer id: " + this.id + "\n" +
             "Service access point: " + this.accessPoint + "\n" +
-            "ChordController: " + this.chordNode;
+            this.chordNode;
     }
 
     private static void usage() {
-        System.err.println("""
-            Usage: java -jar
-            \tProj1 <peer id> <service access point>
-            \t<ip address> <port>""");
+        System.err.println("Usage: java\n" +
+                "\tProj1 <peer id> <service access point>\n" +
+                "\t<ip address> <port>");
         System.exit(1);
     }
 
