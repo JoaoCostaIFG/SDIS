@@ -1,4 +1,4 @@
-package message;
+package message.file;
 
 import file.DigestFile;
 import utils.Pair;
@@ -6,7 +6,7 @@ import utils.Pair;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
-public class ChunkMsg extends Message {
+public class ChunkMsg extends FileMessage {
     public static final String type = "CHUNK";
     private final int chunkNo;
     private byte[] chunk;
@@ -18,7 +18,7 @@ public class ChunkMsg extends Message {
             id + " " +
             fileId + " " +
             chunkNo + " " +
-            Message.CRLF + Message.CRLF;
+            FileMessage.CRLF + FileMessage.CRLF;
         this.chunkNo = chunkNo;
         this.chunk = chunk;
     }
@@ -59,11 +59,6 @@ public class ChunkMsg extends Message {
 
         return ByteBuffer.allocate(headerBytes.length + bodyBytes.length)
             .put(headerBytes).put(bodyBytes).array();
-    }
-
-    @Override
-    public String getSockName() {
-        return "MDR";
     }
 
     @Override

@@ -1,11 +1,10 @@
 package sender;
 
 import message.Message;
-import message.PutChunkMsg;
+import message.file.FileMessage;
+import message.file.PutChunkMsg;
 
 import java.util.Random;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class RemovedPutchunkSender extends MessageSender<PutChunkMsg> {

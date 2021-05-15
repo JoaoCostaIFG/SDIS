@@ -1,22 +1,21 @@
-package message;
+package message.file;
 
-public class IDeletedMsg extends Message {
-    public static final String type = "IDELETED";
+public class DeleteMsg extends FileMessage {
+    public static final String type = "DELETE";
     private final String fileId;
 
-    public IDeletedMsg(String version, String id, String fileId) {
+    public DeleteMsg(String version, String id, String fileId) {
         super(version, id, fileId);
         this.fileId = fileId;
         this.header = version + " " +
                 type + " " +
                 id + " " +
                 this.fileId + " " +
-                Message.CRLF + Message.CRLF;
+                FileMessage.CRLF + FileMessage.CRLF;
     }
 
-    @Override
-    public String getSockName() {
-        return "MC";
+    public String getFileId() {
+        return fileId;
     }
 
     @Override

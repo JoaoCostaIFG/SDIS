@@ -1,6 +1,7 @@
 import chord.ChordNode;
 import file.DigestFile;
-import message.*;
+import message.chord.GetSuccMsg;
+import message.file.FileMessage;
 import sender.*;
 import state.FileInfo;
 import state.State;
@@ -8,6 +9,7 @@ import utils.Pair;
 
 import java.io.IOException;
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.rmi.RemoteException;
@@ -161,7 +163,20 @@ public class Peer implements TestInterface {
             cmd = scanner.nextLine();
             System.out.println("CMD: " + cmd);
             String filePath = "1b.txt";
-            if (cmd.startsWith(""))
+            if (cmd.startsWith("join")) {
+                String[] opts = cmd.split(" ");
+                if (opts.length != 3) {
+                    System.err.println("Join Usage: addr port");
+                    continue;
+                }
+                String addr = opts[1], port = opts[2];
+                try {
+                    InetAddress address = InetAddress.getByName(addr);
+                    chordNode.send(new GetSuccMsg(chordNode), address, Integer.parseInt(port));
+                } catch (UnknownHostException e) {
+                    System.err.println("could not create address " + addr);
+                }
+            }
             if (cmd.equalsIgnoreCase("backup")) {
                 try {
                     this.backup(filePath, 1);
@@ -260,7 +275,7 @@ public class Peer implements TestInterface {
 
         // Storing the futures to be able to restore the file after getting all the chunks (or failing
         // if a chunk is missing)
-        List<Pair<Future<?>, MessageSender<? extends Message>>> senders = new ArrayList<>();
+        List<Pair<Future<?>, MessageSender<? extends FileMessage>>> senders = new ArrayList<>();
         for (int currChunk = 0; currChunk < chunkNo; ++currChunk) {
 //            GetChunkMsg msg = new GetChunkMsg(this.id, fileId, currChunk);
 //            MessageSender<? extends Message> chunkSender;

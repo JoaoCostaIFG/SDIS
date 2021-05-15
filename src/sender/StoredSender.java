@@ -1,7 +1,8 @@
 package sender;
 
 import message.Message;
-import message.StoredMsg;
+import message.file.FileMessage;
+import message.file.StoredMsg;
 
 import java.util.Random;
 

@@ -1,12 +1,10 @@
 package sender;
 
 import message.Message;
-import message.PutChunkMsg;
-import message.StoredMsg;
+import message.file.FileMessage;
+import message.file.PutChunkMsg;
 import state.State;
 
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;

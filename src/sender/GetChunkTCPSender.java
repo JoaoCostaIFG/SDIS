@@ -1,8 +1,9 @@
 package sender;
 
-import message.ChunkMsg;
-import message.GetChunkMsg;
 import message.Message;
+import message.file.ChunkMsg;
+import message.file.GetChunkMsg;
+import message.file.FileMessage;
 import utils.Pair;
 
 import java.io.DataInputStream;
@@ -30,7 +31,7 @@ public class GetChunkTCPSender extends MessageSender<GetChunkMsg> {
 
     private boolean refersToSameChunk(Message message) {
         if (message.getType().equals(ChunkMsg.type) &&
-                message.getFileId().equals(this.message.getFileId())) {
+                ((ChunkMsg)message).getFileId().equals(this.message.getFileId())) {
             return ((ChunkMsg) message).getChunkNo() == this.message.getChunkNo();
         }
         return false;

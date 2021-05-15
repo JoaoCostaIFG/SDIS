@@ -1,6 +1,6 @@
-package message;
+package message.file;
 
-public class GetChunkMsg extends Message {
+public class GetChunkMsg extends FileMessage {
     public static final String type = "GETCHUNK";
     private final String fileId;
     private final Integer chunkNo;
@@ -12,7 +12,7 @@ public class GetChunkMsg extends Message {
                 id + " " +
                 fileId + " " +
                 chunkNo + " " +
-                Message.CRLF + Message.CRLF;
+                FileMessage.CRLF + FileMessage.CRLF;
         this.fileId = fileId;
         this.chunkNo = chunkNo;
     }
@@ -28,11 +28,6 @@ public class GetChunkMsg extends Message {
     @Override
     public byte[] getContent() {
         return header.getBytes();
-    }
-
-    @Override
-    public String getSockName() {
-        return "MC";
     }
 
     @Override

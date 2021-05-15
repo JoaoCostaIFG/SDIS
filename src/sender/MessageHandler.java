@@ -1,23 +1,22 @@
 package sender;
 
 import file.DigestFile;
-import message.*;
+import message.Message;
+import message.chord.GetSuccMsg;
+import message.file.*;
 import state.State;
 
 import java.io.IOException;
 import java.util.Arrays;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class MessageHandler {
-    private final String selfID;
-    private final MessageCreator messageCreator;
+    private final Integer selfID;
     private final SockThread sock;
     private final ConcurrentHashMap<Observer, Boolean> observers;
 
-    public MessageHandler(String selfID, SockThread sock) {
-        this.selfID = selfID;
-        this.messageCreator = new MessageCreator();
+    public MessageHandler(int id, SockThread sock) {
+        this.selfID = id;
         this.sock = sock;
         this.sock.setHandler(this);
         this.observers = new ConcurrentHashMap<>();
@@ -53,7 +52,7 @@ public class MessageHandler {
                     }
 
                     // Add self to map Entry
-                    State.st.incrementChunkDeg(message.getFileId(), message.getChunkNo(), this.selfID);
+                    State.st.incrementChunkDeg(message.getFileId(), message.getChunkNo(), this.selfID.toString());
                     State.st.setAmStoringChunk(message.getFileId(), message.getChunkNo(), true);
                     iStoredTheChunk = true;
                 }
@@ -134,40 +133,11 @@ public class MessageHandler {
     }
 
     // TODO verify message came from the socket?
-    public void handleMessage(String sockName, byte[] receivedData) {
-        int crlfCount = 0;
-        int headerCutoff;
-        for (headerCutoff = 0; headerCutoff < receivedData.length - 1; ++headerCutoff) {
-            if (receivedData[headerCutoff] == 0xD && receivedData[headerCutoff + 1] == 0xA)
-                ++crlfCount;
-            if (crlfCount == 2)
-                break;
-        }
-
-        final String[] header = new String(receivedData, 0, headerCutoff - 2).split(" ");
-        byte[] body = (receivedData.length <= headerCutoff + 2) ?
-                new byte[0] :
-                Arrays.copyOfRange(receivedData, headerCutoff + 2, receivedData.length);
-
+    public void handleMessage(Message message) {
         // skip our own messages (multicast)
-        if (header[Message.idField].equals(this.selfID)) {
-            // System.out.println("We were the ones that sent this message. Skipping...");
+        if (message.getSenderId().equals(this.selfID)) {
+            System.out.println("We were the ones that sent this message. Skipping...");
             return;
-        }
-
-        // construct the reply
-        Message message;
-        try {
-            message = messageCreator.createMessage(header, body);
-        } catch (NoSuchMessage noSuchMessage) {
-            System.err.println("No Such message " + header[Message.typeField]);
-            return;
-        }
-        assert message != null;
-
-        // skip message that came from the wrong socket.
-        if (!message.getSockName().equals(sockName)) {
-            System.err.println("Skipping message that came from the wrong socket.");
         }
 
         System.out.println("\tReceived: " + message);
@@ -194,6 +164,9 @@ public class MessageHandler {
                 break;
             case RemovedMsg.type:
                 handleRemovedMsg((RemovedMsg) message);
+                break;
+            case GetSuccMsg.type:
+                System.err.println("OPA!");
                 break;
             default:
                 // unreachable

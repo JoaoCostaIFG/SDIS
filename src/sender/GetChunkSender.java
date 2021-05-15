@@ -1,8 +1,8 @@
 package sender;
 
-import message.ChunkMsg;
-import message.GetChunkMsg;
 import message.Message;
+import message.file.ChunkMsg;
+import message.file.GetChunkMsg;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -23,7 +23,7 @@ public class GetChunkSender extends MessageSender<GetChunkMsg> {
 
     private boolean refersToSameChunk(Message message) {
         if (message.getType().equals(ChunkMsg.type) &&
-                message.getFileId().equals(this.message.getFileId())) {
+                ((ChunkMsg) message).getFileId().equals(this.message.getFileId())) {
             ChunkMsg chunkMsg = (ChunkMsg) message;
             return chunkMsg.getChunkNo() == this.message.getChunkNo();
         }

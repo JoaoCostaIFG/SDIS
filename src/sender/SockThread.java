@@ -1,6 +1,7 @@
 package sender;
 
 import message.Message;
+import message.file.FileMessage;
 
 import java.io.*;
 import java.net.*;
@@ -89,33 +90,32 @@ public class SockThread implements Runnable {
                 continue;
             }
 
+            Object obj;
             try {
-                InputStream socketReader = socket.getInputStream();
-                n = socketReader.read(packetData);
+                obj = new ObjectInputStream(socket.getInputStream()).readObject();
             } catch (SocketException e) {
                 // happens if the blocking call is interrupted
-                break;
-            } catch (IOException e) {
+                continue;
+            } catch (IOException | ClassNotFoundException e) {
                 e.printStackTrace();
                 continue;
             }
 
             this.threadPool.execute(
-                    () -> handler.handleMessage(this.getName(),
-                            Arrays.copyOfRange(packetData, 0, n))
-            );
+                    () -> {
+                        assert obj != null;
+                        handler.handleMessage((Message) obj);
+                    });
         }
     }
 
     public void send(Message message, InetAddress address, int port) {
-        byte[] packetContent = message.getContent();
         System.out.println("Sent: " + message);
         try {
             // SSLSocket socket = (SSLSocket) SSLSocketFactory.getDefault().createSocket(address, port);
             // socket.setEnabledCipherSuites(CYPHER_SUITES);
             Socket socket = new Socket(address, port);
-            OutputStream socketWriter = socket.getOutputStream();
-            socketWriter.write(packetContent);
+            new ObjectOutputStream(socket.getOutputStream()).writeObject(message);
             socket.close();
         } catch (IOException e) {
             e.printStackTrace();

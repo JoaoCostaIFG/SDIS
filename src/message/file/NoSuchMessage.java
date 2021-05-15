@@ -1,4 +1,4 @@
-package message;
+package message.file;
 
 public class NoSuchMessage extends Exception {
     NoSuchMessage(String type) {

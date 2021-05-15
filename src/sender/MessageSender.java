@@ -1,13 +1,11 @@
 package sender;
 
-import message.ChunkMsg;
-import message.Message;
+import message.file.FileMessage;
 
 import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public abstract class MessageSender<T extends Message> implements Runnable, Observer {
+public abstract class MessageSender<T extends FileMessage> implements Runnable, Observer {
     protected final AtomicBoolean success;
     private final MessageHandler handler;
     private final int port;

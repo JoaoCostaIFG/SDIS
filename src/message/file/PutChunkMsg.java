@@ -1,8 +1,8 @@
-package message;
+package message.file;
 
 import java.nio.ByteBuffer;
 
-public class PutChunkMsg extends Message {
+public class PutChunkMsg extends FileMessage {
     public static final String type = "PUTCHUNK";
     private final Integer chunkNo;
     private final Integer replication;
@@ -16,7 +16,7 @@ public class PutChunkMsg extends Message {
                 fileId + " " +
                 chunkNo + " " +
                 replication + " " +
-                Message.CRLF + Message.CRLF;
+                FileMessage.CRLF + FileMessage.CRLF;
         this.fileId = fileId;
         this.chunkNo = chunkNo;
         this.replication = replication;
@@ -44,11 +44,6 @@ public class PutChunkMsg extends Message {
         byte[] packetContent = super.getContent();
         return ByteBuffer.allocate(packetContent.length + this.chunk.length)
                 .put(packetContent).put(this.chunk).array();
-    }
-
-    @Override
-    public String getSockName() {
-        return "MDB";
     }
 
     @Override
