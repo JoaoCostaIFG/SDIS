@@ -1,6 +1,6 @@
+import chord.ChordInterface;
 import chord.ChordNode;
 import file.DigestFile;
-import message.chord.ChordInterface;
 import message.file.FileMessage;
 import sender.GetChunkSender;
 import sender.MessageSender;
@@ -201,7 +201,7 @@ public class Peer implements TestInterface {
                     continue;
                 }
                 int nodeId = ChordNode.genId(address, Integer.parseInt(port));
-                System.err.println("Genned node id " + nodeId);
+                System.err.println("Gen node id " + nodeId);
                 ChordInterface node;
                 try {
                     node = (ChordInterface) this.registry.lookup(Integer.toString(nodeId));
