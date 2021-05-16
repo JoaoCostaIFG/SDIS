@@ -76,10 +76,10 @@ public class Peer implements TestInterface {
                 new java.util.TimerTask() {
                     @Override
                     public void run() {
-                        // chordNode.checkPredecessor();
+                        chordNode.checkPredecessor();
                         try {
                             chordNode.stabilize();
-                            // chordNode.fixFingers();
+                            chordNode.fixFingers();
                         } catch (RemoteException e) {
                         }
                     }

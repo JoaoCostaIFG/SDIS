@@ -75,6 +75,8 @@ public class ChordNode implements ChordInterface {
      * Make the node join a Chord ring, with n as its successor
      */
     public void join(ChordInterface n) throws RemoteException {
+        System.err.println("Finding succ " + n.getId() + " of " + this.id);
+        predecessor = null;
         successor = n.findSuccessor(id);
     }
 
@@ -85,7 +87,7 @@ public class ChordNode implements ChordInterface {
      */
     public void stabilize() throws RemoteException {
         // TODO try catch with list of succs
-        System.err.println("Stabilizing");
+        // System.err.println("Stabilizing");
         ChordInterface me$ = successor.getPredecessor();
         if (me$ != null) { // If succ knows about a pred
             int me$Id = me$.getId();
@@ -101,7 +103,7 @@ public class ChordNode implements ChordInterface {
      */
     public void notify(ChordInterface n) throws RemoteException {
         int nId = n.getId();
-        System.err.println("Notified by " + nId);
+        // System.err.println("Notified by " + nId);
 
         if (predecessor == null || ChordNode.inBetween(nId, predecessor.getId(), this.id))
             predecessor = n;
@@ -111,7 +113,6 @@ public class ChordNode implements ChordInterface {
      * Called periodically. refreshes finger table entries.
      */
     public void fixFingers() {
-
         if (nextFingerToFix >= m)
             nextFingerToFix = 0;
 
@@ -142,9 +143,8 @@ public class ChordNode implements ChordInterface {
      * Ask node n to find the successor of id
      */
     public ChordInterface findSuccessor(int id) throws RemoteException {
-
-        if (ChordNode.inBetween(id, this.id, successor.getId()) || successor.getId() == id ||
-                successor == this)
+        int succId = successor.getId();
+        if (ChordNode.inBetween(id, this.id, succId) || succId == id)
             return successor;
         else { // Forward the query around the circle
             return closestPrecidingNode(id).findSuccessor(id);
@@ -160,7 +160,13 @@ public class ChordNode implements ChordInterface {
      * Called periodically. checks whether predecessor has failed.
      */
     public void checkPredecessor() {
-
+        if (predecessor != null) {
+            try {
+                this.predecessor.getId();
+            } catch (RemoteException e) {
+                this.predecessor = null;
+            }
+        }
     }
 
     public void lookup() {
