@@ -2,8 +2,6 @@ package chord;
 
 import message.chord.ChordInterface;
 
-import java.math.BigInteger;
-import java.net.BindException;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.rmi.RemoteException;
@@ -11,27 +9,32 @@ import java.rmi.registry.Registry;
 import java.rmi.server.UnicastRemoteObject;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
-import java.util.List;
+
+import static java.lang.Math.pow;
 
 public class ChordNode implements ChordInterface {
-    private final Integer id;                        // The peer's unique identifier
+    private final Integer id;              // The peer's unique identifier
     private final InetAddress address;     // The peer's network address;
     private final int port;
-    private final List<ChordInterface> fingerTable = new ArrayList<>();
-    private int next;
+    private ChordInterface[] fingerTable;
+    private int nextFingerToFix;
     private ChordInterface predecessor;
     private ChordInterface successor;
     public Registry registry = null;
 
-    public static int m = 7;                         // Number of bits of the addressing space
+    public static int m = 7; // Number of bits of the addressing space
 
     public ChordNode(InetAddress address, int port, Registry registry) {
         this.address = address;
         this.port = port;
         this.id = ChordNode.genId(address, port);
         this.registry = registry;
-        successor = this;
+        this.nextFingerToFix = 0;
+        // Init finger table
+        this.fingerTable = new ChordInterface[m];
+        for (int i=0; i<m; ++i)
+            this.fingerTable[i] = this;
+        this.successor = this;
 
         ChordInterface stub;
         try {
@@ -44,6 +47,16 @@ public class ChordNode implements ChordInterface {
             e.printStackTrace();
             System.exit(1);
         }
+    }
+
+    static boolean inBetween(int num, int lf, int rh) {
+        if (num == lf || num == rh)
+            return false;
+        if (lf == rh)
+            return true;
+        if (num >= lf && num <= rh)
+            return true;
+        return lf > rh && (num < rh || num < lf);
     }
 
     public int getId() {
@@ -71,12 +84,15 @@ public class ChordNode implements ChordInterface {
      * and tells the successor about it
      */
     public void stabilize() throws RemoteException {
+        // TODO try catch with list of succs
+        System.err.println("Stabilizing");
         ChordInterface me$ = successor.getPredecessor();
-        int me$Id = me$.getId();
+        if (me$ != null) { // If succ knows about a pred
+            int me$Id = me$.getId();
 
-        if (me$Id > this.id && me$Id < successor.getId())
-            successor = me$;
-
+            if (ChordNode.inBetween(me$Id, this.id, successor.getId()))
+                successor = me$;
+        }
         successor.notify(this);
     }
 
@@ -85,20 +101,27 @@ public class ChordNode implements ChordInterface {
      */
     public void notify(ChordInterface n) throws RemoteException {
         int nId = n.getId();
-        if (predecessor == null || (nId > predecessor.getId() && nId < this.id))
+        System.err.println("Notified by " + nId);
+
+        if (predecessor == null || ChordNode.inBetween(nId, predecessor.getId(), this.id))
             predecessor = n;
     }
 
     /**
      * Called periodically. refreshes finger table entries.
      */
-    public void fixFingers() throws RemoteException {
-        next++;
+    public void fixFingers() {
 
-        if (next > m)
-            next = 1;
+        if (nextFingerToFix >= m)
+            nextFingerToFix = 0;
 
-        fingerTable.set(next, findSuccessor(id + (int) Math.pow(2, next - 1)));
+        int succId = (id + (int) pow(2, nextFingerToFix)) % (int) Math.pow(2, m);
+        try {
+            fingerTable[nextFingerToFix] = findSuccessor(succId);
+        } catch (RemoteException e) {
+            fingerTable[nextFingerToFix] = this;
+        }
+        ++nextFingerToFix;
     }
 
     /**
@@ -106,10 +129,10 @@ public class ChordNode implements ChordInterface {
      */
     public ChordInterface closestPrecidingNode(int id) throws RemoteException {
         // Search the local table for the highest predecessor of id
-        for (int i = m; i >= 1; i--) {
-            int succId = fingerTable.get(i).getId();
-            if (succId > this.id && succId < id)
-                return fingerTable.get(i);
+        for (int i = m - 1; i >= 0; i--) {
+            int succId = fingerTable[i].getId();
+            if (ChordNode.inBetween(succId, this.id, id))
+                return fingerTable[i];
         }
 
         return this;
@@ -119,7 +142,9 @@ public class ChordNode implements ChordInterface {
      * Ask node n to find the successor of id
      */
     public ChordInterface findSuccessor(int id) throws RemoteException {
-        if ((id > this.id && id <= successor.getId()) || successor == this)
+
+        if (ChordNode.inBetween(id, this.id, successor.getId()) || successor.getId() == id ||
+                successor == this)
             return successor;
         else { // Forward the query around the circle
             return closestPrecidingNode(id).findSuccessor(id);
@@ -154,7 +179,7 @@ public class ChordNode implements ChordInterface {
             MessageDigest digest = MessageDigest.getInstance("SHA-1");
             byte[] hash = digest.digest(s.getBytes());
             ByteBuffer wrapped = ByteBuffer.wrap(hash);
-            int div = (int) Math.floor(Math.pow(2, ChordNode.m));
+            int div = (int) Math.floor(pow(2, ChordNode.m));
             return Math.floorMod(wrapped.getInt(), div);
         }
         catch (NoSuchAlgorithmException ignored) { }

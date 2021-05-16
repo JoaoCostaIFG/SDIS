@@ -71,6 +71,22 @@ public class Peer implements TestInterface {
 
     private void initCoordNode() {
         this.chordNode = new ChordNode(address, port, registry);
+        ChordNode chordNode = this.chordNode;
+        new java.util.Timer().scheduleAtFixedRate(
+                new java.util.TimerTask() {
+                    @Override
+                    public void run() {
+                        // chordNode.checkPredecessor();
+                        try {
+                            chordNode.stabilize();
+                            // chordNode.fixFingers();
+                        } catch (RemoteException e) {
+                        }
+                    }
+                },
+                1000,
+                1000
+        );
     }
 
     private void handlePendingTasks() {
