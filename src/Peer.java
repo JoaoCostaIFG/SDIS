@@ -201,7 +201,7 @@ public class Peer implements TestInterface {
                     continue;
                 }
                 try {
-                    System.out.println("RESPONSE: " + node.test("nigga"));
+                    this.chordNode.join(node);
                 } catch (RemoteException e) {
                     System.err.println("Failed to get response from node");
                     continue;
@@ -230,6 +230,9 @@ public class Peer implements TestInterface {
                 catch (RemoteException e) {
                     e.printStackTrace();
                 }
+            }
+            else if (cmd.equalsIgnoreCase("chordstatus")) {
+                System.out.println(this.chordNode);
             }
         } while (!cmd.equalsIgnoreCase("EXIT"));
 

@@ -3,6 +3,7 @@ package chord;
 import message.chord.ChordInterface;
 
 import java.math.BigInteger;
+import java.net.BindException;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.rmi.RemoteException;
@@ -60,7 +61,7 @@ public class ChordNode implements ChordInterface {
     /**
      * Make the node join a Chord ring, with n as its successor
      */
-    public void join(ChordNode n) throws RemoteException {
+    public void join(ChordInterface n) throws RemoteException {
         successor = n.findSuccessor(id);
     }
 
@@ -118,7 +119,7 @@ public class ChordNode implements ChordInterface {
      * Ask node n to find the successor of id
      */
     public ChordInterface findSuccessor(int id) throws RemoteException {
-        if (id > this.id && id <= successor.getId())
+        if ((id > this.id && id <= successor.getId()) || successor == this)
             return successor;
         else { // Forward the query around the circle
             return closestPrecidingNode(id).findSuccessor(id);
@@ -165,6 +166,27 @@ public class ChordNode implements ChordInterface {
 
     @Override
     public String toString() {
-        return "Chord id: " + id;
+        StringBuilder res = new StringBuilder("FingerTable:\n");
+        for (ChordInterface n: this.fingerTable) {
+            try {
+                res.append("\t").append(n.getId()).append("\n");
+            } catch (RemoteException e) {
+                res.append("\t" + "Cant get to node\n");
+            }
+        }
+        try {
+            res.append("Succ: ").append(successor.getId()).append("\n");
+        } catch (RemoteException e) {
+            res.append("Succ: Can't get succ\n");
+        }
+        if (predecessor != null) {
+            try {
+                res.append("Pred: ").append(predecessor.getId()).append("\n");
+            } catch (RemoteException e) {
+                res.append("Pred: Can't get pred\n");
+            }
+        } else res.append("Pred: Can't get pred\n");
+
+        return "Chord id: " + id + "\n" + res;
     }
 }
