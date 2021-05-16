@@ -169,6 +169,7 @@ public class ChordNode implements ChordInterface {
 
         ChordInterface ret = this;
         while (!(ChordNode.inBetween(id, ret.getId(), ret.getSuccessor().getId(), false, true))) {
+            System.out.println(id + " E (" + ret.getId() + ", " + ret.getSuccessor().getId() + ")");
             ret = ret.closestPrecedingFinger(id);
         }
         return ret;
@@ -181,6 +182,7 @@ public class ChordNode implements ChordInterface {
     public ChordInterface closestPrecedingFinger(int id) throws RemoteException {
         for (int i = m - 1; i >= 0; --i) {
             int succId = fingerTable[i].getId();
+            System.out.println("\t" + succId + " E (" + this.id + ", " + id + ")");
             if (ChordNode.inBetween(succId, this.id, id))
                 return fingerTable[i];
         }
@@ -227,9 +229,9 @@ public class ChordNode implements ChordInterface {
             return false;
         if (lh == rh)
             return true;
-        if (num >= lh && num <= rh)
+        if (num > lh && num < rh)
             return true;
-        return lh > rh && (num < rh || num < lh);
+        return lh > rh && (num < rh || num > lh);
     }
 
     static boolean inBetween(int num, int lf, int rh) {
@@ -239,9 +241,10 @@ public class ChordNode implements ChordInterface {
     @Override
     public String toString() {
         StringBuilder res = new StringBuilder("FingerTable:\n");
-        for (ChordInterface n : this.fingerTable) {
+        for (int i = 0; i < m; ++i) {
+            res.append("\t").append(i).append("(").append(this.getFingerStartId(i)).append("): ");
             try {
-                res.append("\t").append(n.getId()).append("\n");
+                res.append(this.fingerTable[i].getId()).append("\n");
             } catch (RemoteException e) {
                 res.append("\t" + "Cant get to node\n");
             }
