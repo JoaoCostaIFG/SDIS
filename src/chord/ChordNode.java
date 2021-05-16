@@ -16,7 +16,7 @@ public class ChordNode implements ChordInterface {
     private final Integer id;              // The peer's unique identifier
     private final InetAddress address;     // The peer's network address;
     private final int port;
-    private ChordInterface[] fingerTable;
+    private final ChordInterface[] fingerTable;
     private int nextFingerToFix;
     private ChordInterface predecessor;
     private ChordInterface successor;
@@ -32,7 +32,7 @@ public class ChordNode implements ChordInterface {
         this.nextFingerToFix = 0;
         // Init finger table
         this.fingerTable = new ChordInterface[m];
-        for (int i=0; i<m; ++i)
+        for (int i = 0; i < m; ++i)
             this.fingerTable[i] = this;
         this.successor = this;
 
@@ -41,8 +41,7 @@ public class ChordNode implements ChordInterface {
             stub = (ChordInterface) UnicastRemoteObject.exportObject(this, 0);
             registry.bind(this.id.toString(), stub);
             System.out.println("Registered node with id: " + this.id);
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             System.err.println("Failed setting up the access point for use by chord node.");
             e.printStackTrace();
             System.exit(1);
@@ -144,9 +143,9 @@ public class ChordNode implements ChordInterface {
      */
     public ChordInterface findSuccessor(int id) throws RemoteException {
         int succId = successor.getId();
-        if (ChordNode.inBetween(id, this.id, succId) || succId == id)
+        if (ChordNode.inBetween(id, this.id, succId) || succId == id) {
             return successor;
-        else { // Forward the query around the circle
+        } else { // Forward the query around the circle
             return closestPrecidingNode(id).findSuccessor(id);
         }
     }
@@ -187,10 +186,11 @@ public class ChordNode implements ChordInterface {
             ByteBuffer wrapped = ByteBuffer.wrap(hash);
             int div = (int) Math.floor(pow(2, ChordNode.m));
             return Math.floorMod(wrapped.getInt(), div);
+        } catch (NoSuchAlgorithmException ignored) {
         }
-        catch (NoSuchAlgorithmException ignored) { }
         return -1;
     }
+
     public static int genId(InetAddress address, int port) {
         return ChordNode.genId(address.getHostAddress() + ":" + port);
     }
@@ -198,7 +198,7 @@ public class ChordNode implements ChordInterface {
     @Override
     public String toString() {
         StringBuilder res = new StringBuilder("FingerTable:\n");
-        for (ChordInterface n: this.fingerTable) {
+        for (ChordInterface n : this.fingerTable) {
             try {
                 res.append("\t").append(n.getId()).append("\n");
             } catch (RemoteException e) {

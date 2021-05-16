@@ -1,11 +1,10 @@
-import chord.ChordController;
 import chord.ChordNode;
 import file.DigestFile;
-import jdk.jshell.spi.ExecutionControl;
 import message.chord.ChordInterface;
-import message.chord.GetSuccMsg;
 import message.file.FileMessage;
-import sender.*;
+import sender.GetChunkSender;
+import sender.MessageSender;
+import sender.SockThread;
 import state.FileInfo;
 import state.State;
 import utils.Pair;
@@ -42,7 +41,7 @@ public class Peer implements TestInterface {
 
     // thread pool
     private final ScheduledExecutorService testAppThreadPool =
-        Executors.newScheduledThreadPool(Runtime.getRuntime().availableProcessors() + 1);
+            Executors.newScheduledThreadPool(Runtime.getRuntime().availableProcessors() + 1);
 
     public Registry registry = null;
     public String rmiName = null;
@@ -72,6 +71,7 @@ public class Peer implements TestInterface {
     private void initCoordNode() {
         this.chordNode = new ChordNode(address, port, registry);
         ChordNode chordNode = this.chordNode;
+
         new java.util.Timer().scheduleAtFixedRate(
                 new java.util.TimerTask() {
                     @Override
@@ -98,8 +98,7 @@ public class Peer implements TestInterface {
                     if (task.length != 3) continue;
                     try {
                         this.backup(task[1], Integer.parseInt(task[2]));
-                    }
-                    catch (RemoteException e) {
+                    } catch (RemoteException e) {
                         System.err.println("Failed to redo pending task: BACKUP " + task[1] + " " + task[2]);
                     }
                     break;
@@ -107,8 +106,7 @@ public class Peer implements TestInterface {
                     if (task.length != 2) continue;
                     try {
                         this.restore(task[1]);
-                    }
-                    catch (RemoteException e) {
+                    } catch (RemoteException e) {
                         System.err.println("Failed to redo pending task: RESTORE " + task[1]);
                     }
                     break;
@@ -128,8 +126,7 @@ public class Peer implements TestInterface {
                 String newFileId;
                 try {
                     newFileId = DigestFile.getHash(filePath);
-                }
-                catch (IOException e) {
+                } catch (IOException e) {
                     newFileId = ""; // File not present, delete it
                 }
                 if (newFileId.equals("")) { // File not present, delete it
@@ -138,8 +135,7 @@ public class Peer implements TestInterface {
                         System.err.println(errorMsg + "(Peer Init)");
                         return;
                     }
-                }
-                else {
+                } else {
                     if (!newFileId.equals(oldFileId)) { // If the file changed when we were Zzz
                         try {
                             errorMsg = this.deleteFromId(oldFileId.strip());
@@ -148,8 +144,7 @@ public class Peer implements TestInterface {
                                 return;
                             }
                             this.backup(filePath, fileInfo.getDesiredRep());
-                        }
-                        catch (RemoteException e) {
+                        } catch (RemoteException e) {
                             System.err.println("Fail when deleting file (Peer Init)" + filePath);
                         }
                     }
@@ -172,16 +167,14 @@ public class Peer implements TestInterface {
                 registry.unbind(String.valueOf(chordNode.getId()));
                 registry.unbind(rmiName);
                 UnicastRemoteObject.unexportObject(this, true);
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                 System.err.println("Failed to unregister our RMI service.");
             }
         }
 
         try {
             State.exportMap();
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             e.printStackTrace();
         }
     }
@@ -226,28 +219,22 @@ public class Peer implements TestInterface {
             if (cmd.equalsIgnoreCase("backup")) {
                 try {
                     this.backup(filePath, 1);
-                }
-                catch (RemoteException e) {
+                } catch (RemoteException e) {
                     e.printStackTrace();
                 }
-            }
-            else if (cmd.equalsIgnoreCase("reclaim")) {
+            } else if (cmd.equalsIgnoreCase("reclaim")) {
                 try {
                     this.reclaim(0);
-                }
-                catch (RemoteException e) {
+                } catch (RemoteException e) {
                     e.printStackTrace();
                 }
-            }
-            else if (cmd.equalsIgnoreCase("restore")) {
+            } else if (cmd.equalsIgnoreCase("restore")) {
                 try {
                     System.out.println(this.restore(filePath));
-                }
-                catch (RemoteException e) {
+                } catch (RemoteException e) {
                     e.printStackTrace();
                 }
-            }
-            else if (cmd.equalsIgnoreCase("chordstatus")) {
+            } else if (cmd.equalsIgnoreCase("chordstatus")) {
                 System.out.println(this.chordNode);
             }
         } while (!cmd.equalsIgnoreCase("EXIT"));
@@ -279,8 +266,7 @@ public class Peer implements TestInterface {
             }
 
             chunks = DigestFile.divideFile(filePath, replicationDegree);
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             State.st.rmTask(task);
             throw new RemoteException("Couldn't divide file " + filePath);
         }
@@ -310,9 +296,7 @@ public class Peer implements TestInterface {
         try {
             fileId = DigestFile.getHash(filePath);
             chunkNo = DigestFile.getChunkCount(filePath); // TODO: Esperar até o ultimo ter size 0?
-        }
-
-        catch (Exception e) {
+        } catch (Exception e) {
             State.st.rmTask(task);
             throw new RemoteException("Failed to restore the file " + filePath);
         }
@@ -336,8 +320,7 @@ public class Peer implements TestInterface {
         for (var sender : senders) {
             try {
                 sender.p1.get();
-            }
-            catch (InterruptedException | ExecutionException e) {
+            } catch (InterruptedException | ExecutionException e) {
                 State.st.rmTask(task);
                 throw new RemoteException("There was an error recovering a chunk of the file.");
             }
@@ -349,7 +332,7 @@ public class Peer implements TestInterface {
             if (!sender.p2.getSuccess()) {
                 State.st.rmTask(task);
                 throw new RemoteException("Failed to restore the file " + filePath +
-                    " because of a missing chunk: " + chunkNumber);
+                        " because of a missing chunk: " + chunkNumber);
             }
 
             chunk = getChunkSender.getResponse();
@@ -359,8 +342,7 @@ public class Peer implements TestInterface {
         Path path = Paths.get(filePath);
         try {
             DigestFile.assembleFile(path.getFileName().toString(), chunks);
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             State.st.rmTask(task);
             throw new RemoteException("Failed to write restored file: " + path.getFileName().toString());
         }
@@ -384,8 +366,7 @@ public class Peer implements TestInterface {
         String fileId;
         try {
             fileId = DigestFile.getHash(filePath);
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             throw new RemoteException("Deletion of " + filePath + " failed.");
         }
         return "File " + filePath + " deletion: " + this.deleteFromId(fileId);
@@ -438,15 +419,13 @@ public class Peer implements TestInterface {
                 State.st.setMaxDiskSpaceB(-1L);
                 // infinite capacity => do nothing
                 isDone = true;
-            }
-            else if (State.st.getMaxDiskSpaceB() >= 0) {
+            } else if (State.st.getMaxDiskSpaceB() >= 0) {
                 long capacityDelta = newMaxDiskSpaceB - State.st.getMaxDiskSpaceB();
                 State.st.setMaxDiskSpaceB(newMaxDiskSpaceB);
                 // if max capacity is unchanged or increases, we don't need to do anything
                 if (capacityDelta >= 0)
                     isDone = true;
-            }
-            else {
+            } else {
                 State.st.setMaxDiskSpaceB(newMaxDiskSpaceB);
             }
 
@@ -487,10 +466,9 @@ public class Peer implements TestInterface {
                     filesIInitiated.append("\t\tChunks:\n");
                     for (var chunkEntry : fileInfo.getAllChunks().entrySet()) {
                         filesIInitiated.append("\t\t\tID: ").append(chunkEntry.getKey())
-                            .append(" - Perceived rep.: ").append(chunkEntry.getValue().p1.size()).append("\n");
+                                .append(" - Perceived rep.: ").append(chunkEntry.getValue().p1.size()).append("\n");
                     }
-                }
-                else {
+                } else {
                     for (var chunkEntry : fileInfo.getAllChunks().entrySet()) {
                         int chunkId = chunkEntry.getKey();
                         int perceivedRep = chunkEntry.getValue().p1.size();
@@ -513,19 +491,19 @@ public class Peer implements TestInterface {
 
         long filledKB = Math.round(filledB / 1000.0);
         return filesIInitiated
-            .append(chunksIStore)
-            .append("Storing ").append(filledKB == 0 ? (filledB + "B") : (filledKB + "KB"))
-            .append(" of a maximum of ")
-            .append(maxStorageSizeKB < 0 ? "infinite " : maxStorageSizeKB).append("KB.")
-            .toString();
+                .append(chunksIStore)
+                .append("Storing ").append(filledKB == 0 ? (filledB + "B") : (filledKB + "KB"))
+                .append(" of a maximum of ")
+                .append(maxStorageSizeKB < 0 ? "infinite " : maxStorageSizeKB).append("KB.")
+                .toString();
     }
 
     @Override
     public String toString() {
         return
-            "Peer id: " + this.id + "\n" +
-            "Service access point: " + this.accessPoint + "\n" +
-            this.sock;
+                "Peer id: " + this.id + "\n" +
+                        "Service access point: " + this.accessPoint + "\n" +
+                        this.sock;
     }
 
     private static void usage() {
@@ -541,9 +519,7 @@ public class Peer implements TestInterface {
 
         try {
             prog = new Peer(args);
-        }
-
-        catch (IOException e) {
+        } catch (IOException e) {
             System.err.println("Couldn't initialize the program.");
             e.printStackTrace();
             usage();
@@ -577,8 +553,7 @@ public class Peer implements TestInterface {
                 prog.registry = LocateRegistry.getRegistry();
 
             prog.registry.bind(prog.rmiName, stub);
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             System.err.println("Failed setting up the access point for use by the testing app.");
             System.exit(1);
             // e.printStackTrace();
