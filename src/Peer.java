@@ -1,6 +1,8 @@
 import chord.ChordController;
 import chord.ChordNode;
 import file.DigestFile;
+import jdk.jshell.spi.ExecutionControl;
+import message.chord.ChordInterface;
 import message.chord.GetSuccMsg;
 import message.file.FileMessage;
 import sender.*;
@@ -13,6 +15,7 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.rmi.NotBoundException;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
@@ -27,11 +30,15 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 
 public class Peer implements TestInterface {
-    private final ChordController chordController;
+    private final SockThread sock;
+    private ChordNode chordNode;
     private boolean closed = false;
     // cmd line arguments
     private final String id;
     private final String accessPoint;
+    private final InetAddress address;
+    private final int port;
+
 
     // thread pool
     private final ScheduledExecutorService testAppThreadPool =
@@ -54,10 +61,16 @@ public class Peer implements TestInterface {
         DigestFile.setFileDir(this.id);
 
         this.accessPoint = args[1];
-        this.chordController = new ChordController(InetAddress.getByName(args[2]), Integer.parseInt(args[3]));
+        this.address = InetAddress.getByName(args[2]);
+        this.port = Integer.parseInt(args[3]);
+        this.sock = new SockThread("sock", address, port);
 
         System.out.println(this);
         System.out.println("Initialized program.");
+    }
+
+    private void initCoordNode() {
+        this.chordNode = new ChordNode(address, port, registry);
     }
 
     private void handlePendingTasks() {
@@ -140,6 +153,7 @@ public class Peer implements TestInterface {
         // cleanup the access point
         if (registry != null) {
             try {
+                registry.unbind(String.valueOf(chordNode.getId()));
                 registry.unbind(rmiName);
                 UnicastRemoteObject.unexportObject(this, true);
             }
@@ -157,7 +171,7 @@ public class Peer implements TestInterface {
     }
 
     private void mainLoop() {
-        this.chordController.start();
+        this.sock.start();
         Scanner scanner = new Scanner(System.in);
         String cmd;
         do {
@@ -173,13 +187,24 @@ public class Peer implements TestInterface {
                 String addr = opts[1], port = opts[2];
                 try {
                     InetAddress address = InetAddress.getByName(addr);
-                    ChordNode node = new ChordNode(address, Integer.parseInt(port));
-                    this.chordController.getNode().join(node);
-                    chordController.send(new GetSuccMsg(chordController.getNode()), address, Integer.parseInt(port));
                 } catch (UnknownHostException e) {
-                    System.err.println("could not create address " + addr);
-                } catch (IOException e) {
-                    e.printStackTrace();
+                    System.err.println("Invalid address");
+                    continue;
+                }
+                int nodeId = ChordNode.genId(address, Integer.parseInt(port));
+                System.err.println("Genned node id " + nodeId);
+                ChordInterface node;
+                try {
+                    node = (ChordInterface) this.registry.lookup(Integer.toString(nodeId));
+                } catch (RemoteException | NotBoundException e) {
+                    System.err.println("Failed to find node with given address and port");
+                    continue;
+                }
+                try {
+                    System.out.println("RESPONSE: " + node.test("nigga"));
+                } catch (RemoteException e) {
+                    System.err.println("Failed to get response from node");
+                    continue;
                 }
             }
             if (cmd.equalsIgnoreCase("backup")) {
@@ -209,7 +234,7 @@ public class Peer implements TestInterface {
         } while (!cmd.equalsIgnoreCase("EXIT"));
 
         // shush threads
-        this.chordController.stop();
+        this.sock.close();
     }
 
     /* used by the TestApp (RMI) */
@@ -481,7 +506,7 @@ public class Peer implements TestInterface {
         return
             "Peer id: " + this.id + "\n" +
             "Service access point: " + this.accessPoint + "\n" +
-            this.chordController;
+            this.sock;
     }
 
     private static void usage() {
@@ -529,17 +554,17 @@ public class Peer implements TestInterface {
 
             if (rmiinfoSplit.length > 1)
                 prog.registry = LocateRegistry.getRegistry("localhost", Integer.parseInt(rmiinfoSplit[1]));
-
             else
                 prog.registry = LocateRegistry.getRegistry();
 
             prog.registry.bind(prog.rmiName, stub);
         }
-
         catch (Exception e) {
             System.err.println("Failed setting up the access point for use by the testing app.");
+            System.exit(1);
             // e.printStackTrace();
         }
+        prog.initCoordNode();
 
         prog.mainLoop();
         System.exit(0);

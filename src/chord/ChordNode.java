@@ -1,31 +1,48 @@
 package chord;
 
-import sender.Observer;
+import message.chord.ChordInterface;
 
-import java.io.IOException;
+import java.math.BigInteger;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
+import java.rmi.RemoteException;
+import java.rmi.registry.Registry;
+import java.rmi.server.UnicastRemoteObject;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 
-public class ChordNode {
-    private final int id;                        // The peer's unique identifier
+public class ChordNode implements ChordInterface {
+    private final Integer id;                        // The peer's unique identifier
     private final InetAddress address;     // The peer's network address;
     private final int port;
-    private final List<ChordNode> fingerTable = new ArrayList<>();
+    private final List<ChordInterface> fingerTable = new ArrayList<>();
     private int next;
-    private ChordNode predecessor;
-    private ChordNode successor;
+    private ChordInterface predecessor;
+    private ChordInterface successor;
+    public Registry registry = null;
 
-    public static int m = 127;                         // Number of bits of the addressing space
+    public static int m = 7;                         // Number of bits of the addressing space
 
-    public ChordNode(InetAddress address, int port) throws IOException {
+    public ChordNode(InetAddress address, int port, Registry registry) {
         this.address = address;
         this.port = port;
-        this.id = Math.floorMod(sha1(address.toString() + port), m);
+        this.id = ChordNode.genId(address, port);
+        this.registry = registry;
         successor = this;
+
+        ChordInterface stub;
+        try {
+            stub = (ChordInterface) UnicastRemoteObject.exportObject(this, 0);
+            registry.bind(this.id.toString(), stub);
+            System.out.println("Registered node with id: " + this.id);
+        }
+        catch (Exception e) {
+            System.err.println("Failed setting up the access point for use by chord node.");
+            e.printStackTrace();
+            System.exit(1);
+        }
     }
 
     public int getId() {
@@ -43,7 +60,7 @@ public class ChordNode {
     /**
      * Make the node join a Chord ring, with n as its successor
      */
-    public void join(ChordNode n) {
+    public void join(ChordNode n) throws RemoteException {
         successor = n.findSuccessor(id);
     }
 
@@ -52,11 +69,12 @@ public class ChordNode {
      * The node asks the successor about its predecessor, verifies if its immediate successor is consistent,
      * and tells the successor about it
      */
-    public void stabilize() {
-        ChordNode x = successor.getPredecessor();
+    public void stabilize() throws RemoteException {
+        ChordInterface me$ = successor.getPredecessor();
+        int me$Id = me$.getId();
 
-        if (x.id > this.id && x.id < successor.id)
-            successor = x;
+        if (me$Id > this.id && me$Id < successor.getId())
+            successor = me$;
 
         successor.notify(this);
     }
@@ -64,15 +82,16 @@ public class ChordNode {
     /**
      * Node n thinks it might be our predecessor.
      */
-    public void notify(ChordNode n) {
-        if (predecessor == null || (n.id > predecessor.id && n.id < this.id))
+    public void notify(ChordInterface n) throws RemoteException {
+        int nId = n.getId();
+        if (predecessor == null || (nId > predecessor.getId() && nId < this.id))
             predecessor = n;
     }
 
     /**
      * Called periodically. refreshes finger table entries.
      */
-    public void fixFingers() {
+    public void fixFingers() throws RemoteException {
         next++;
 
         if (next > m)
@@ -84,11 +103,13 @@ public class ChordNode {
     /**
      * Search the local table for the highest predecessor of id
      */
-    public ChordNode closestPrecidingNode(int id) {
+    public ChordInterface closestPrecidingNode(int id) throws RemoteException {
         // Search the local table for the highest predecessor of id
-        for (int i = m; i >= 1; i--)
-            if (fingerTable.get(i).id > this.id && fingerTable.get(i).id < id)
+        for (int i = m; i >= 1; i--) {
+            int succId = fingerTable.get(i).getId();
+            if (succId > this.id && succId < id)
                 return fingerTable.get(i);
+        }
 
         return this;
     }
@@ -96,12 +117,17 @@ public class ChordNode {
     /**
      * Ask node n to find the successor of id
      */
-    public ChordNode findSuccessor(int id) {
-        if (id > this.id && id <= successor.id)
+    public ChordInterface findSuccessor(int id) throws RemoteException {
+        if (id > this.id && id <= successor.getId())
             return successor;
         else { // Forward the query around the circle
             return closestPrecidingNode(id).findSuccessor(id);
         }
+    }
+
+    @Override
+    public String test(String arg) {
+        return arg.toUpperCase();
     }
 
     /**
@@ -115,27 +141,26 @@ public class ChordNode {
 
     }
 
-    public ChordNode getPredecessor() {
+    public ChordInterface getPredecessor() {
         return predecessor;
     }
 
     /**
      * Calculates SHA1 Algorithm and hashes string to an integer
      */
-    public static int sha1(String s) {
+    public static int genId(String s) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-1");
-
             byte[] hash = digest.digest(s.getBytes());
             ByteBuffer wrapped = ByteBuffer.wrap(hash);
-
-            return wrapped.getInt();
+            int div = (int) Math.floor(Math.pow(2, ChordNode.m));
+            return Math.floorMod(wrapped.getInt(), div);
         }
-
-        // For specifying wrong message digest algorithms
-        catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException(e);
-        }
+        catch (NoSuchAlgorithmException ignored) { }
+        return -1;
+    }
+    public static int genId(InetAddress address, int port) {
+        return ChordNode.genId(address.getHostAddress() + ":" + port);
     }
 
     @Override
