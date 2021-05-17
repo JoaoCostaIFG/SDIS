@@ -76,16 +76,36 @@ public class Peer implements TestInterface {
                 new java.util.TimerTask() {
                     @Override
                     public void run() {
-                        chordNode.checkPredecessor();
                         try {
                             chordNode.stabilize();
-                            chordNode.fixFingers();
                         } catch (RemoteException e) {
                         }
                     }
                 },
                 1000,
                 1000
+        );
+
+        new java.util.Timer().scheduleAtFixedRate(
+                new java.util.TimerTask() {
+                    @Override
+                    public void run() {
+                        chordNode.fixFingers();
+                    }
+                },
+                1000,
+                1000
+        );
+
+        new java.util.Timer().scheduleAtFixedRate(
+                new java.util.TimerTask() {
+                    @Override
+                    public void run() {
+                        chordNode.checkPredecessor();
+                    }
+                },
+                10000,
+                10000
         );
     }
 
