@@ -1,11 +1,11 @@
 package sender;
 
-import message.file.FileMessage;
+import message.Message;
 
 import java.net.InetAddress;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public abstract class MessageSender<T extends FileMessage> implements Runnable, Observer {
+public abstract class MessageSender<T extends Message> implements Runnable, Observer {
     protected final AtomicBoolean success;
     private final MessageHandler handler;
     private final int port;
@@ -48,6 +48,6 @@ public abstract class MessageSender<T extends FileMessage> implements Runnable, 
     }
 
     protected void send() {
-        this.sockThread.send(this.message, this.address, this.port);
+        this.sockThread.send(this.message);
     }
 }

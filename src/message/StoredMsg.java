@@ -1,6 +1,6 @@
-package message.file;
+package message;
 
-public class StoredMsg extends FileMessage {
+public class StoredMsg extends Message {
     public static final String type = "STORED";
     private final String fileId;
     private final int chunkNo;
@@ -12,7 +12,7 @@ public class StoredMsg extends FileMessage {
                 id + " " +
                 fileId + " " +
                 chunkNo + " " +
-                FileMessage.CRLF + FileMessage.CRLF;
+                Message.CRLF + Message.CRLF;
 
         this.fileId = fileId;
         this.chunkNo = chunkNo;

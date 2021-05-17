@@ -1,5 +1,11 @@
 package chord;
 
+import message.Message;
+import sender.MessageHandler;
+import sender.Observer;
+import sender.SockThread;
+
+import java.io.IOException;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.rmi.RemoteException;
@@ -10,21 +16,27 @@ import java.security.NoSuchAlgorithmException;
 
 import static java.lang.Math.pow;
 
-public class ChordNode implements ChordInterface {
+public class ChordNode implements ChordInterface, Observer {
     private final Integer id;              // The peer's unique identifier
     private final InetAddress address;     // The peer's network address;
     private final int port;
     private final ChordInterface[] fingerTable;
+    private final MessageHandler messageHandler;
     private int nextFingerToFix;
     private ChordInterface predecessor;
     public Registry registry;
+    private SockThread sock;
 
     public static int m = 7; // Number of bits of the addressing space
 
-    public ChordNode(InetAddress address, int port, Registry registry) {
+    public ChordNode(InetAddress address, int port, Registry registry) throws IOException {
         this.address = address;
         this.port = port;
         this.id = ChordNode.genId(address, port);
+        this.sock = new SockThread("sock", address, port);
+        this.messageHandler = new MessageHandler(this.id, this.sock);
+        this.messageHandler.addObserver(this);
+
         this.registry = registry;
         this.nextFingerToFix = 0;
         this.fingerTable = new ChordInterface[m];
@@ -33,11 +45,13 @@ public class ChordNode implements ChordInterface {
         this.predecessor = null;
         this.setSuccessor(this);
 
+
         ChordInterface stub;
         try {
             stub = (ChordInterface) UnicastRemoteObject.exportObject(this, 0);
             registry.bind(this.id.toString(), stub);
             System.out.println("Registered node with id: " + this.id);
+            System.out.println(this);
         } catch (Exception e) {
             System.err.println("Failed setting up the access point for use by chord node.");
             e.printStackTrace();
@@ -50,14 +64,15 @@ public class ChordNode implements ChordInterface {
         return id;
     }
 
-    public String getAddress() {
-        return address.getHostAddress();
+    public InetAddress getAddress() {
+        return address;
     }
 
     public int getPort() {
         return port;
     }
 
+    /* CHORD */
     @Override
     public ChordInterface getPredecessor() {
         return predecessor;
@@ -101,6 +116,7 @@ public class ChordNode implements ChordInterface {
         // update predecessor
         if (this.predecessor != null) {
             ChordInterface me$ = this.getSuccessor().getPredecessor();
+            System.out.println("" + this.getSuccessor().getId());
             if (me$ != null) { // if pred knows about a succ
                 if (ChordNode.inBetween(me$.getId(), this.id, this.getSuccessor().getId()))
                     this.setSuccessor(me$);
@@ -168,10 +184,12 @@ public class ChordNode implements ChordInterface {
     @Override
     public ChordInterface closestPrecedingFinger(int id) throws RemoteException {
         for (int i = m - 1; i >= 0; --i) {
-            int succId = fingerTable[i].getId();
-            //System.out.println("\t" + succId + " E (" + this.id + ", " + id + ")");
-            if (ChordNode.inBetween(succId, this.id, id))
-                return fingerTable[i];
+            if (fingerTable[i] != null) {
+                int succId = fingerTable[i].getId();
+                //System.out.println("\t" + succId + " E (" + this.id + ", " + id + ")");
+                if (ChordNode.inBetween(succId, this.id, id))
+                    return fingerTable[i];
+            }
         }
         return this;
     }
@@ -232,8 +250,8 @@ public class ChordNode implements ChordInterface {
             res.append("\t").append(i).append("(").append(this.getFingerStartId(i)).append("): ");
             try {
                 res.append(this.fingerTable[i].getId()).append("\n");
-            } catch (RemoteException e) {
-                res.append("\t" + "Cant get to node\n");
+            } catch (RemoteException | NullPointerException e) {
+                res.append("Cant get to node\n");
             }
         }
         try {
@@ -249,6 +267,43 @@ public class ChordNode implements ChordInterface {
             }
         } else res.append("Pred: Can't get pred\n");
 
-        return "Chord id: " + id + "\n" + res;
+        return "Chord id: " + id + "\n" + res + "\n"
+                + "Sock: " + this.sock;
+    }
+
+    /* TCP */
+    public void start() {
+        this.sock.start();
+    }
+
+    public void stop() {
+        this.sock.interrupt();
+    }
+
+    public void send(Message message) {
+        ChordInterface nextHopDest = null;
+        try {
+            nextHopDest = closestPrecedingFinger(message.getDestId());
+        } catch (RemoteException e) {
+            System.err.println("Could not find sucessor for message " + message);
+            e.printStackTrace();
+        }
+        assert nextHopDest != null;
+        try {
+            if (nextHopDest == this)
+                nextHopDest = getSuccessor();
+            message.setDest(nextHopDest);
+            message.addToPath(nextHopDest.getId());
+        } catch (RemoteException e) { // TODO Max num of tries?
+            System.err.println("Could connect to chosen next hop dest : TODO Max tries with timeout " + message);
+            e.printStackTrace();
+        }
+        this.sock.send(message);
+    }
+
+    @Override
+    public void notify(Message message) {
+        if (!message.getDestId().equals(this.id)) // If message isn't for us
+            this.send(message); // resend it through the chord ring
     }
 }

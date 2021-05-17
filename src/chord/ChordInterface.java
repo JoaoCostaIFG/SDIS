@@ -1,5 +1,6 @@
 package chord;
 
+import java.net.InetAddress;
 import java.rmi.Remote;
 import java.rmi.RemoteException;
 
@@ -13,4 +14,7 @@ public interface ChordInterface extends Remote {
     ChordInterface closestPrecedingFinger(int id) throws RemoteException;
 
     void notify(ChordInterface n) throws RemoteException;
+
+    InetAddress getAddress() throws RemoteException;
+    int getPort() throws RemoteException;
 }

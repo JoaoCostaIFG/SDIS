@@ -1,6 +1,6 @@
-package message.file;
+package message;
 
-public class IDeletedMsg extends FileMessage {
+public class IDeletedMsg extends Message {
     public static final String type = "IDELETED";
     private final String fileId;
 
@@ -11,7 +11,7 @@ public class IDeletedMsg extends FileMessage {
                 type + " " +
                 id + " " +
                 this.fileId + " " +
-                FileMessage.CRLF + FileMessage.CRLF;
+                Message.CRLF + Message.CRLF;
     }
 
     @Override

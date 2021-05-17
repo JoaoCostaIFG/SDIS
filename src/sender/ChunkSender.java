@@ -1,8 +1,7 @@
 package sender;
 
+import message.ChunkMsg;
 import message.Message;
-import message.file.ChunkMsg;
-import message.file.FileMessage;
 
 import java.util.Random;
 
@@ -17,7 +16,7 @@ public class ChunkSender extends MessageSender<ChunkMsg> {
 
     private boolean refersToSameChunk(Message message) {
         if (message.getType().equals(ChunkMsg.type) &&
-                ((FileMessage)(message)).getFileId().equals(this.message.getFileId())) {
+                ((Message)(message)).getFileId().equals(this.message.getFileId())) {
             return ((ChunkMsg) message).getChunkNo() == this.message.getChunkNo();
         }
         return false;

@@ -1,6 +1,6 @@
-package message.file;
+package message;
 
-public class GetChunkMsg extends FileMessage {
+public class GetChunkMsg extends Message {
     public static final String type = "GETCHUNK";
     private final String fileId;
     private final Integer chunkNo;
@@ -12,7 +12,7 @@ public class GetChunkMsg extends FileMessage {
                 id + " " +
                 fileId + " " +
                 chunkNo + " " +
-                FileMessage.CRLF + FileMessage.CRLF;
+                Message.CRLF + Message.CRLF;
         this.fileId = fileId;
         this.chunkNo = chunkNo;
     }

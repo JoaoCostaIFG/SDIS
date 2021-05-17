@@ -1,8 +1,7 @@
 package sender;
 
 import message.Message;
-import message.file.FileMessage;
-import message.file.PutChunkMsg;
+import message.PutChunkMsg;
 
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;

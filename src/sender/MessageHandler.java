@@ -1,13 +1,10 @@
 package sender;
 
 import file.DigestFile;
-import message.Message;
-import message.chord.GetSuccMsg;
-import message.file.*;
+import message.*;
 import state.State;
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class MessageHandler {
@@ -134,21 +131,21 @@ public class MessageHandler {
 
     // TODO verify message came from the socket?
     public void handleMessage(Message message) {
-        // skip our own messages (multicast)
-        if (message.getSenderId().equals(this.selfID)) {
-            System.out.println("We were the ones that sent this message. Skipping...");
-            return;
-        }
-
         System.out.println("\tReceived: " + message);
         // notify observers
         for (Observer obs : this.observers.keySet()) {
             obs.notify(message);
         }
 
+        // IMP we want to skip handling the message only after we informed the msg to the chord node
+        if (!message.getDestId().equals(this.selfID)) {
+            System.out.println("This message isn't for us");
+            return;
+        }
+
         // unreachable
         if (PutChunkMsg.class.equals(message.getClass())) {
-            handleMsg((PutChunkMsg) message);
+//            handleMsg((PutChunkMsg) message);
         } else if (StoredMsg.class.equals(message.getClass())) {
             handleMsg((StoredMsg) message);
         } else if (DeleteMsg.class.equals(message.getClass())) {
@@ -158,8 +155,6 @@ public class MessageHandler {
         } else if (ChunkMsg.class.equals(message.getClass())) { // skoiop
         } else if (RemovedMsg.class.equals(message.getClass())) {
             handleMsg((RemovedMsg) message);
-        } else if (GetSuccMsg.class.equals(message.getClass())) {
-            // Notified to chordNode (observable)
         }
     }
 }

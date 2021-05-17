@@ -1,22 +1,25 @@
-package message.file;
+package message;
 
+import java.net.InetAddress;
 import java.nio.ByteBuffer;
 
-public class PutChunkMsg extends FileMessage {
+public class PutChunkMsg extends Message {
     public static final String type = "PUTCHUNK";
     private final Integer chunkNo;
     private final Integer replication;
     private final byte[] chunk;
 
-    public PutChunkMsg(String version, String id, String fileId, int chunkNo, int replication, byte[] chunk) {
-        super(version, id, fileId);
+    public PutChunkMsg(String version, String id, String fileId,
+                       InetAddress sourceDest, int sourcePort, Integer destId,
+                       int chunkNo, int replication, byte[] chunk) {
+        super(version, id, fileId, sourceDest, sourcePort, destId);
         this.header = version + " " +
                 type + " " +
                 id + " " +
                 fileId + " " +
                 chunkNo + " " +
                 replication + " " +
-                FileMessage.CRLF + FileMessage.CRLF;
+                Message.CRLF + Message.CRLF;
         this.fileId = fileId;
         this.chunkNo = chunkNo;
         this.replication = replication;
@@ -54,10 +57,5 @@ public class PutChunkMsg extends FileMessage {
     @Override
     public int getHeaderLen() {
         return 6;
-    }
-
-    @Override
-    public String toString() {
-        return type + " " + this.fileId + " chunkno. " + this.chunkNo + " rep. " + this.replication + " from " + super.id;
     }
 }

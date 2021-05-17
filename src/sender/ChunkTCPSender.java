@@ -1,9 +1,8 @@
 package sender;
 
 import file.DigestFile;
+import message.ChunkMsg;
 import message.Message;
-import message.file.ChunkMsg;
-import message.file.FileMessage;
 
 import java.io.DataOutputStream;
 import java.io.IOException;

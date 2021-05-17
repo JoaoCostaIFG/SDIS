@@ -1,8 +1,8 @@
 package sender;
 
+import message.ChunkMsg;
+import message.GetChunkMsg;
 import message.Message;
-import message.file.ChunkMsg;
-import message.file.GetChunkMsg;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 

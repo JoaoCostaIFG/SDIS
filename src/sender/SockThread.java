@@ -1,11 +1,9 @@
 package sender;
 
 import message.Message;
-import message.file.FileMessage;
 
 import java.io.*;
 import java.net.*;
-import java.util.Arrays;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -109,11 +107,13 @@ public class SockThread implements Runnable {
         }
     }
 
-    public void send(Message message, InetAddress address, int port) {
+    public void send(Message message) {
         System.out.println("Sent: " + message);
         try {
             // SSLSocket socket = (SSLSocket) SSLSocketFactory.getDefault().createSocket(address, port);
             // socket.setEnabledCipherSuites(CYPHER_SUITES);
+            InetAddress address = message.getDestAddress();
+            int port = message.getDestPort();
             Socket socket = new Socket(address, port);
             new ObjectOutputStream(socket.getOutputStream()).writeObject(message);
             socket.close();

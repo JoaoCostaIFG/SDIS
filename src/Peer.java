@@ -1,7 +1,8 @@
 import chord.ChordInterface;
 import chord.ChordNode;
 import file.DigestFile;
-import message.file.FileMessage;
+import message.Message;
+import message.PutChunkMsg;
 import sender.GetChunkSender;
 import sender.MessageSender;
 import sender.SockThread;
@@ -29,7 +30,6 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 
 public class Peer implements TestInterface {
-    private final SockThread sock;
     private ChordNode chordNode;
     private boolean closed = false;
     // cmd line arguments
@@ -62,13 +62,12 @@ public class Peer implements TestInterface {
         this.accessPoint = args[1];
         this.address = InetAddress.getByName(args[2]);
         this.port = Integer.parseInt(args[3]);
-        this.sock = new SockThread("sock", address, port);
 
         System.out.println(this);
         System.out.println("Initialized program.");
     }
 
-    private void initCoordNode() {
+    private void initCoordNode() throws IOException {
         this.chordNode = new ChordNode(address, port, registry);
         ChordNode chordNode = this.chordNode;
 
@@ -200,7 +199,7 @@ public class Peer implements TestInterface {
     }
 
     private void mainLoop() {
-        this.sock.start();
+        this.chordNode.start();
         Scanner scanner = new Scanner(System.in);
         String cmd;
         do {
@@ -210,7 +209,7 @@ public class Peer implements TestInterface {
             if (cmd.startsWith("join")) {
                 String[] opts = cmd.split(" ");
                 if (opts.length != 3) {
-                    System.err.println("Join Usage: addr port");
+                    System.err.println("Join Usage: join addr port");
                     continue;
                 }
                 String addr = opts[1], port = opts[2];
@@ -254,13 +253,23 @@ public class Peer implements TestInterface {
                 } catch (RemoteException e) {
                     e.printStackTrace();
                 }
-            } else if (cmd.equalsIgnoreCase("chordstatus")) {
+            } else if (cmd.equalsIgnoreCase("st")) {
                 System.out.println(this.chordNode);
+            } else if (cmd.startsWith("send")) {
+                String[] opts = cmd.split(" ");
+                if (opts.length != 2) {
+                    System.err.println("send Usage: send destId");
+                    continue;
+                }
+                Integer destId = Integer.parseInt(opts[1]);
+                this.chordNode.send(new PutChunkMsg("1.0", this.id, "dummyFile", this.address, this.port, destId, 1, 1, null));
+                System.err.println("Sent msg");
             }
-        } while (!cmd.equalsIgnoreCase("EXIT"));
+
+    } while (!cmd.equalsIgnoreCase("EXIT"));
 
         // shush threads
-        this.sock.close();
+        this.chordNode.stop();
     }
 
     /* used by the TestApp (RMI) */
@@ -328,7 +337,7 @@ public class Peer implements TestInterface {
 
         // Storing the futures to be able to restore the file after getting all the chunks (or failing
         // if a chunk is missing)
-        List<Pair<Future<?>, MessageSender<? extends FileMessage>>> senders = new ArrayList<>();
+        List<Pair<Future<?>, MessageSender<? extends Message>>> senders = new ArrayList<>();
         for (int currChunk = 0; currChunk < chunkNo; ++currChunk) {
 //            GetChunkMsg msg = new GetChunkMsg(this.id, fileId, currChunk);
 //            MessageSender<? extends Message> chunkSender;
@@ -522,8 +531,7 @@ public class Peer implements TestInterface {
     public String toString() {
         return
                 "Peer id: " + this.id + "\n" +
-                        "Service access point: " + this.accessPoint + "\n" +
-                        this.sock;
+                        "Service access point: " + this.accessPoint + "\n";
     }
 
     private static void usage() {
@@ -578,7 +586,11 @@ public class Peer implements TestInterface {
             System.exit(1);
             // e.printStackTrace();
         }
-        prog.initCoordNode();
+        try {
+            prog.initCoordNode();
+        } catch (IOException e) {
+            System.err.println("Couldn't create node socket");
+        }
 
         prog.mainLoop();
         System.exit(0);

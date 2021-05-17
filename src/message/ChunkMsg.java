@@ -1,4 +1,4 @@
-package message.file;
+package message;
 
 import file.DigestFile;
 import utils.Pair;
@@ -6,7 +6,7 @@ import utils.Pair;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
-public class ChunkMsg extends FileMessage {
+public class ChunkMsg extends Message {
     public static final String type = "CHUNK";
     private final int chunkNo;
     private byte[] chunk;
@@ -18,7 +18,7 @@ public class ChunkMsg extends FileMessage {
             id + " " +
             fileId + " " +
             chunkNo + " " +
-            FileMessage.CRLF + FileMessage.CRLF;
+            Message.CRLF + Message.CRLF;
         this.chunkNo = chunkNo;
         this.chunk = chunk;
     }

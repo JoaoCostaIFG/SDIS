@@ -1,6 +1,6 @@
-package message.file;
+package message;
 
-public class DeleteMsg extends FileMessage {
+public class DeleteMsg extends Message {
     public static final String type = "DELETE";
     private final String fileId;
 
@@ -11,7 +11,7 @@ public class DeleteMsg extends FileMessage {
                 type + " " +
                 id + " " +
                 this.fileId + " " +
-                FileMessage.CRLF + FileMessage.CRLF;
+                Message.CRLF + Message.CRLF;
     }
 
     public String getFileId() {

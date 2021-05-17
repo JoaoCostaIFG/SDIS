@@ -1,6 +1,6 @@
-package message.file;
+package message;
 
-public class RemovedMsg extends FileMessage {
+public class RemovedMsg extends Message {
     public static final String type = "REMOVED";
     private final Integer chunkNo;
 
@@ -11,7 +11,7 @@ public class RemovedMsg extends FileMessage {
                 id + " " +
                 fileId + " " +
                 chunkNo + " " +
-                FileMessage.CRLF + FileMessage.CRLF;
+                Message.CRLF + Message.CRLF;
         this.chunkNo = chunkNo;
     }
 
