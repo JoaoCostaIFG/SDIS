@@ -5,7 +5,6 @@ import message.Message;
 import message.PutChunkMsg;
 import sender.GetChunkSender;
 import sender.MessageSender;
-import sender.SockThread;
 import state.FileInfo;
 import state.State;
 import utils.Pair;
@@ -234,8 +233,18 @@ public class Peer implements TestInterface {
                     System.err.println("Failed to get response from node");
                     continue;
                 }
-            }
-            if (cmd.equalsIgnoreCase("backup")) {
+            } else if (cmd.equalsIgnoreCase("st")) {
+                System.out.println(this.chordNode);
+            } else if (cmd.startsWith("send")) {
+                String[] opts = cmd.split(" ");
+                if (opts.length != 2) {
+                    System.err.println("send Usage: send destId");
+                    continue;
+                }
+                Integer destId = Integer.parseInt(opts[1]);
+                this.chordNode.send(new PutChunkMsg("1.0", this.id, "dummyFile", this.address, this.port, destId, 1, 1, null));
+                System.err.println("Sent msg");
+            } else if (cmd.equalsIgnoreCase("backup")) {
                 try {
                     this.backup(filePath, 1);
                 } catch (RemoteException e) {
@@ -253,20 +262,8 @@ public class Peer implements TestInterface {
                 } catch (RemoteException e) {
                     e.printStackTrace();
                 }
-            } else if (cmd.equalsIgnoreCase("st")) {
-                System.out.println(this.chordNode);
-            } else if (cmd.startsWith("send")) {
-                String[] opts = cmd.split(" ");
-                if (opts.length != 2) {
-                    System.err.println("send Usage: send destId");
-                    continue;
-                }
-                Integer destId = Integer.parseInt(opts[1]);
-                this.chordNode.send(new PutChunkMsg("1.0", this.id, "dummyFile", this.address, this.port, destId, 1, 1, null));
-                System.err.println("Sent msg");
             }
-
-    } while (!cmd.equalsIgnoreCase("EXIT"));
+        } while (!cmd.equalsIgnoreCase("EXIT"));
 
         // shush threads
         this.chordNode.stop();

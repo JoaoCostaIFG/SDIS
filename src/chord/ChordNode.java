@@ -25,7 +25,7 @@ public class ChordNode implements ChordInterface, Observer {
     private int nextFingerToFix;
     private ChordInterface predecessor;
     public Registry registry;
-    private SockThread sock;
+    private final SockThread sock;
 
     public static int m = 7; // Number of bits of the addressing space
 
@@ -44,7 +44,6 @@ public class ChordNode implements ChordInterface, Observer {
         // init node as if he was the only one in the network
         this.predecessor = null;
         this.setSuccessor(this);
-
 
         ChordInterface stub;
         try {
@@ -116,7 +115,6 @@ public class ChordNode implements ChordInterface, Observer {
         // update predecessor
         if (this.predecessor != null) {
             ChordInterface me$ = this.getSuccessor().getPredecessor();
-            System.out.println("" + this.getSuccessor().getId());
             if (me$ != null) { // if pred knows about a succ
                 if (ChordNode.inBetween(me$.getId(), this.id, this.getSuccessor().getId()))
                     this.setSuccessor(me$);
