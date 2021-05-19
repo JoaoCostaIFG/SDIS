@@ -34,6 +34,11 @@ public class ChordNode implements ChordInterface, Observer {
         this.port = port;
         this.id = ChordNode.genId(address, port);
         this.sock = new SockThread("sock", address, port);
+        try {
+            this.sock.sslLoop();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
         this.messageHandler = new MessageHandler(this.id, this.sock);
         this.messageHandler.addObserver(this);
 
