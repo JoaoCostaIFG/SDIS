@@ -18,9 +18,11 @@ import java.util.List;
 import java.util.Objects;
 
 public class DigestFile {
+    public static final int MAX_CHUNK_SIZE = 64000;
+
     private final static Integer CHUNK_LEN = 256;
-    private static final int MAX_CHUNK_SIZE = 64000;
     private static final int MAX_CHUNK_NUM = 999999;
+
     public static String PEER_DIR = "." + File.separator + "peer" + File.separator;
     public static String FILE_DIR = PEER_DIR + "stored" + File.separator;
     public static String RESTORE_DIR = PEER_DIR + "restored" + File.separator;

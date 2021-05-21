@@ -1,20 +1,16 @@
 package sender;
 
+import file.DigestFile;
 import message.Message;
 
 import javax.net.ssl.*;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.net.InetAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.net.SocketException;
+import java.io.*;
+import java.net.*;
 import java.nio.ByteBuffer;
+import java.nio.channels.ServerSocketChannel;
+import java.nio.channels.SocketChannel;
 import java.security.*;
 import java.security.cert.CertificateException;
-import java.util.Arrays;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -26,7 +22,7 @@ public class SockThread implements Runnable {
     private final ExecutorService threadPool =
             Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
     private final String name;
-    private final ServerSocket serverSocket;
+    private final ServerSocketChannel serverSocketChannel;
     private final InetAddress ip;
     private final Integer port;
     private MessageHandler handler;
@@ -36,6 +32,7 @@ public class SockThread implements Runnable {
     private ByteBuffer clientIn, clientOut; // read/write side of client Engine
     private SSLEngine serverEngine;         // server Engine
     private ByteBuffer serverIn, serverOut; // read/write side of server Engine
+
     /*
      * For data transport, this example uses local ByteBuffers.  This
      * isn't really useful, but the purpose of this example is to show
@@ -50,18 +47,22 @@ public class SockThread implements Runnable {
         this.port = port;
 
         try {
-            KeyStore ks = KeyStore.getInstance("JKS");
-            KeyStore ts = KeyStore.getInstance("JKS");
-
+            // password for the keys
             char[] passphrase = "123456".toCharArray();
+            // initialize key and trust material
+            KeyStore ks = KeyStore.getInstance("JKS");
             ks.load(new FileInputStream("../keys/client.keys"), passphrase);
+            KeyStore ts = KeyStore.getInstance("JKS");
             ts.load(new FileInputStream("../keys/truststore"), passphrase);
 
+            // KeyManager decides which key to use
             KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
             kmf.init(ks, passphrase);
+            // TrustManager decides whether to allow connections
             TrustManagerFactory tmf = TrustManagerFactory.getInstance("SunX509");
             tmf.init(ts);
 
+            // get instance of SSLContext for TLS protocols
             SSLContext sslCtx = SSLContext.getInstance("TLS");
             sslCtx.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
             this.sslc = sslCtx;
@@ -69,7 +70,8 @@ public class SockThread implements Runnable {
             e.printStackTrace();
         }
 
-        this.serverSocket = new ServerSocket(port, MAX_CONNS, ip);
+        this.serverSocketChannel = ServerSocketChannel.open();
+        this.serverSocketChannel.bind(new InetSocketAddress(ip, port), MAX_CONNS);
     }
 
     public String getName() {
@@ -84,7 +86,7 @@ public class SockThread implements Runnable {
         this.threadPool.shutdown();
 
         try {
-            this.serverSocket.close();
+            this.serverSocketChannel.close();
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -103,28 +105,30 @@ public class SockThread implements Runnable {
     public void run() {
         running.set(true);
         while (running.get()) {
-            byte[] packetData = new byte[64000 + 1000];
-            int n;
-            // SSLSocket socket; TODO Use threads to accept connections concurrently?
-            Socket socket;
+            SocketChannel socketChannel;
             try {
-                socket = serverSocket.accept();
+                socketChannel = this.serverSocketChannel.accept();
             } catch (IOException e) {
                 System.err.println("Timed out while waiting for answer (Sock thread) " + this);
-                try {
-                    serverSocket.close();
-                } catch (IOException ioException) {
-                    System.err.println("Failed to close socket (ChunkTCP)");
-                }
                 continue;
             }
 
-            Object obj;
+            ByteBuffer inBuff = ByteBuffer.allocate(DigestFile.MAX_CHUNK_SIZE + 1000);
+            while (true) {
+                try {
+                    if (!(inBuff.hasRemaining() && socketChannel.read(inBuff) != -1)) break;
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    continue;
+                }
+            }
+
+            ByteArrayInputStream bis = new ByteArrayInputStream(inBuff.array());
+            Message msg;
             try {
-                obj = new ObjectInputStream(socket.getInputStream()).readObject();
-            } catch (SocketException e) {
-                // happens if the blocking call is interrupted
-                continue;
+                ObjectInput in = new ObjectInputStream(bis);
+                msg = (Message) in.readObject();
+                bis.close();
             } catch (IOException | ClassNotFoundException e) {
                 e.printStackTrace();
                 continue;
@@ -132,8 +136,8 @@ public class SockThread implements Runnable {
 
             this.threadPool.execute(
                     () -> {
-                        assert obj != null;
-                        handler.handleMessage((Message) obj);
+                        assert msg != null;
+                        handler.handleMessage(msg);
                     });
         }
     }
@@ -143,9 +147,31 @@ public class SockThread implements Runnable {
         try {
             InetAddress address = message.getDestAddress();
             int port = message.getDestPort();
-            Socket socket = new Socket(address, port);
-            new ObjectOutputStream(socket.getOutputStream()).writeObject(message);
-            socket.close();
+            // create socket channel
+            SocketChannel socketChannel = SocketChannel.open();
+            socketChannel.configureBlocking(false);
+            socketChannel.connect(new InetSocketAddress(address, port));
+
+            // TODO busy-wait
+            while (!socketChannel.finishConnect()) {
+                System.out.println("Connecting...");
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                    break;
+                }
+            }
+
+            try (ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+                ObjectOutputStream out = new ObjectOutputStream(bos);
+                out.writeObject(message);
+                out.flush();
+                ByteBuffer clientOut = ByteBuffer.wrap(bos.toByteArray());
+                socketChannel.write(clientOut);
+            }
+
+            socketChannel.close();
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -156,114 +182,114 @@ public class SockThread implements Runnable {
         return ip + ":" + port + "\n";
     }
 
-    public void sslLoop() throws Exception {
-        boolean dataDone = false;
+    // public void sslLoop() throws Exception {
+    //     boolean dataDone = false;
 
-        this.createSSLEngines();
-        this.createBuffers();
+    //     this.createSSLEngines();
+    //     this.createBuffers();
 
-        SSLEngineResult clientResult, serverResult;
-        while (!isEngineClosed(this.clientEngine) || !isEngineClosed(this.serverEngine)) {
-            clientResult = this.clientEngine.wrap(clientOut, cTOs);
-            System.out.println("client wrap: " + clientResult);
-            runDelegatedTasks(clientResult, this.clientEngine);
+    //     SSLEngineResult clientResult, serverResult;
+    //     while (!isEngineClosed(this.clientEngine) || !isEngineClosed(this.serverEngine)) {
+    //         /* SEND CLIENT DATA */
+    //         clientResult = this.clientEngine.wrap(clientOut, cTOs);
+    //         System.out.println("client wrap: " + clientResult);
+    //         runDelegatedTasks(clientResult, this.clientEngine);
 
-            serverResult = serverEngine.wrap(serverOut, sTOc);
-            System.out.println("server wrap: " + serverResult);
-            runDelegatedTasks(serverResult, serverEngine);
+    //         this.socketChannel.write(cTOs);
 
-            this.cTOs.flip();
-            this.sTOc.flip();
+    //         /* READ CLIENT DATA */
+    //         this.socketChannel.read(cTOs);
+    //         this.cTOs.flip();
 
-            clientResult = this.clientEngine.unwrap(this.sTOc, clientIn);
-            System.out.println("client unwrap: " + clientResult);
-            runDelegatedTasks(clientResult, this.clientEngine);
+    //         serverResult = this.serverEngine.unwrap(cTOs, serverIn);
+    //         System.out.println("server unwrap: " + serverResult);
+    //         runDelegatedTasks(serverResult, serverEngine);
 
-            serverResult = this.serverEngine.unwrap(this.cTOs, serverIn);
-            System.out.println("server unwrap: " + serverResult);
-            runDelegatedTasks(serverResult, serverEngine);
+    //         /* SEND SERVER DATA */
+    //         serverResult = this.serverEngine.wrap(serverOut, sTOc);
+    //         System.out.println("server wrap: " + serverResult);
+    //         runDelegatedTasks(serverResult, serverEngine);
 
-            this.cTOs.compact();
-            this.sTOc.compact();
+    //         this.socketChannel.write(sTOc);
 
-            /*
-             * After we've transfered all application data between the client
-             * and server, we close the clientEngine's outbound stream.
-             * This generates a close_notify handshake message, which the
-             * server engine receives and responds by closing itself.
-             *
-             * In normal operation, each SSLEngine should call
-             * closeOutbound().  To protect against truncation attacks,
-             * SSLEngine.closeInbound() should be called whenever it has
-             * determined that no more input data will ever be
-             * available (say a closed input stream).
-             */
-            if (!dataDone && (clientOut.limit() == serverIn.position()) &&
-                    (serverOut.limit() == clientIn.position())) {
+    //         /* READ SERVER DATA */
+    //         this.socketChannel.read(sTOc);
+    //         this.sTOc.flip();
 
-                /*
-                 * A sanity check to ensure we got what was sent.
-                 */
-                clientIn.flip();
-                System.out.println(new String(clientIn.array()));
-                serverIn.flip();
-                System.out.println(new String(serverIn.array()));
+    //         clientResult = this.clientEngine.unwrap(sTOc, clientIn);
+    //         System.out.println("client unwrap: " + clientResult);
+    //         runDelegatedTasks(clientResult, this.clientEngine);
 
-                System.out.println("\tClosing clientEngine's *OUTBOUND*...");
-                clientEngine.closeOutbound();
-                serverEngine.closeOutbound();
-                dataDone = true;
-            }
-        }
-    }
 
-    /*
-     * If the result indicates that we have outstanding tasks to do,
-     * go ahead and run them in this thread.
-     */
-    private static void runDelegatedTasks(SSLEngineResult result, SSLEngine engine) throws Exception {
-        if (result.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.NEED_TASK) {
-            Runnable runnable;
-            while ((runnable = engine.getDelegatedTask()) != null) {
-                System.out.println("\trunning delegated task...");
-                runnable.run();
-            }
-            SSLEngineResult.HandshakeStatus hsStatus = engine.getHandshakeStatus();
-            if (hsStatus == SSLEngineResult.HandshakeStatus.NEED_TASK) {
-                throw new Exception("handshake shouldn't need additional tasks");
-            }
-            System.out.println("\tnew HandshakeStatus: " + hsStatus);
-        }
-    }
+    //         this.cTOs.compact();
+    //         this.sTOc.compact();
 
-    private void createSSLEngines() {
-        // server side config
-        this.serverEngine = this.sslc.createSSLEngine();
-        this.serverEngine.setUseClientMode(false);
-        this.serverEngine.setNeedClientAuth(true);
+    //         if (!dataDone && (clientOut.limit() == serverIn.position()) &&
+    //                 (serverOut.limit() == clientIn.position())) {
 
-        // client side config
-        this.clientEngine = this.sslc.createSSLEngine("client", 80);
-        this.clientEngine.setUseClientMode(true);
-    }
+    //             /*
+    //              * A sanity check to ensure we got what was sent.
+    //              */
+    //             clientIn.flip();
+    //             System.out.println(new String(clientIn.array()));
+    //             serverIn.flip();
+    //             System.out.println(new String(serverIn.array()));
 
-    private void createBuffers() {
-        // assuming the buffer sizes are the same between client and server
-        SSLSession session = this.clientEngine.getSession();
-        int appBufferMax = session.getApplicationBufferSize();
-        int netBufferMax = session.getPacketBufferSize();
+    //             System.out.println("\tClosing clientEngine's *OUTBOUND*...");
+    //             clientEngine.closeOutbound();
+    //             serverEngine.closeOutbound();
+    //             dataDone = true;
+    //         }
+    //     }
+    // }
 
-        this.clientIn = ByteBuffer.allocate(appBufferMax + 50);
-        this.serverIn = ByteBuffer.allocate(appBufferMax + 50);
+    // /*
+    //  * If the result indicates that we have outstanding tasks to do,
+    //  * go ahead and run them in this thread.
+    //  */
+    // private static void runDelegatedTasks(SSLEngineResult result, SSLEngine engine) throws Exception {
+    //     if (result.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.NEED_TASK) {
+    //         Runnable runnable;
+    //         while ((runnable = engine.getDelegatedTask()) != null) {
+    //             System.out.println("\trunning delegated task...");
+    //             runnable.run();
+    //         }
+    //         SSLEngineResult.HandshakeStatus hsStatus = engine.getHandshakeStatus();
+    //         if (hsStatus == SSLEngineResult.HandshakeStatus.NEED_TASK) {
+    //             throw new Exception("handshake shouldn't need additional tasks");
+    //         }
+    //         System.out.println("\tnew HandshakeStatus: " + hsStatus);
+    //     }
+    // }
 
-        this.cTOs = ByteBuffer.allocate(netBufferMax);
-        this.sTOc = ByteBuffer.allocate(netBufferMax);
+    // private void createSSLEngines() {
+    //     // server side config
+    //     this.serverEngine = this.sslc.createSSLEngine();
+    //     this.serverEngine.setUseClientMode(false);
+    //     this.serverEngine.setNeedClientAuth(true);
 
-        this.clientOut = ByteBuffer.wrap("Ola! Eu sou o cliente.".getBytes());
-        this.serverOut = ByteBuffer.wrap("Ola cliente! Eu sou o server".getBytes());
-    }
+    //     // client side config
+    //     this.clientEngine = this.sslc.createSSLEngine("localhost", 8001);
+    //     this.clientEngine.setUseClientMode(true);
+    // }
 
-    private boolean isEngineClosed(SSLEngine engine) {
-        return engine.isOutboundDone() && engine.isInboundDone();
-    }
+    // private void createBuffers() {
+    //     // assuming the buffer sizes are the same between client and server
+    //     SSLSession session = this.clientEngine.getSession();
+    //     int appBufferMax = session.getApplicationBufferSize();
+    //     int netBufferMax = session.getPacketBufferSize();
+
+    //     this.clientIn = ByteBuffer.allocate(appBufferMax + 50);
+    //     this.serverIn = ByteBuffer.allocate(appBufferMax + 50);
+
+    //     this.cTOs = ByteBuffer.allocate(netBufferMax);
+    //     this.sTOc = ByteBuffer.allocate(netBufferMax);
+
+    //     this.clientOut = ByteBuffer.wrap("Ola! Eu sou o cliente.".getBytes());
+    //     this.serverOut = ByteBuffer.wrap("Ola cliente! Eu sou o server".getBytes());
+    // }
+
+    // private boolean isEngineClosed(SSLEngine engine) {
+    //     return engine.isOutboundDone() && engine.isInboundDone();
+    // }
 }
