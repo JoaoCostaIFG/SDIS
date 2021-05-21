@@ -25,14 +25,15 @@ public class SockThread implements Runnable {
             Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
     private final String name;
     private final ServerSocket serverSocket;
-    private final InetAddress ip;
+    private final InetAddress address;
     private final Integer port;
-    private MessageHandler handler;
+    private final Observer observer;
 
-    public SockThread(String name, InetAddress ip, Integer port) throws IOException {
+    public SockThread(String name, InetAddress ip, Integer port, Observer chordNode) throws IOException {
         this.name = name;
-        this.ip = ip;
+        this.address = ip;
         this.port = port;
+        this.observer = chordNode;
 
         // this.serverSocket =
         //        (SSLServerSocket) SSLServerSocketFactory.getDefault().createServerSocket(port, MAX_CONNS, ip);
@@ -40,12 +41,12 @@ public class SockThread implements Runnable {
         this.serverSocket = new ServerSocket(port, MAX_CONNS, ip);
     }
 
-    public String getName() {
-        return this.name;
+    public InetAddress getAddress() {
+        return address;
     }
 
-    public void setHandler(MessageHandler handler) {
-        this.handler = handler;
+    public Integer getPort() {
+        return port;
     }
 
     public void close() {
@@ -102,8 +103,14 @@ public class SockThread implements Runnable {
             this.threadPool.execute(
                     () -> {
                         assert obj != null;
-                        handler.handleMessage((Message) obj);
+                        this.observer.notify((Message) obj);
                     });
+
+            try {
+                socket.close();
+            } catch (IOException e) {
+                System.err.println("Couldn't close socket");
+            }
         }
     }
 
@@ -124,6 +131,6 @@ public class SockThread implements Runnable {
 
     @Override
     public String toString() {
-        return ip + ":" + port + "\n";
+        return address + ":" + port + "\n";
     }
 }

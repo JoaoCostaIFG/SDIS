@@ -1,6 +1,7 @@
 package message;
 
 import chord.ChordInterface;
+import chord.ChordNode;
 
 import java.io.Serializable;
 import java.net.InetAddress;
@@ -20,23 +21,17 @@ public abstract class Message implements Serializable {
     private int destPort;
     private InetAddress sourceAddress;
     private int sourcePort;
+    // IMP if destId is null it means that no hops are necessary and the destination is already known
     private Integer destId;
     private List<Integer> path;
 
     // TODO cleanup this
-    public Message(String version, String id, String fileId) {
-        this.header = version + " " +
-                type + " " +
-                id + " " +
-                fileId + " " +
-                Message.CRLF + Message.CRLF;
-        this.version = version;
-        this.id = id;
+    public Message(String fileId) {
         this.path = new ArrayList<>();
     }
 
-    public Message(String version, String id, String fileId, InetAddress sourceAddress, int sourcePort, Integer destId) {
-        this(version, id, fileId);
+    public Message(String fileId, InetAddress sourceAddress, int sourcePort, Integer destId) {
+        this(fileId);
         this.destId = destId;
         this.sourceAddress = sourceAddress;
         this.sourcePort = sourcePort;
@@ -52,18 +47,20 @@ public abstract class Message implements Serializable {
 
     public abstract String getType();
 
-    public abstract int getHeaderLen();
-
     public String getFileId() {
         return fileId;
     }
 
-    public byte[] getContent() {
-        return header.getBytes();
-    }
-
     public String getSenderId() {
         return this.id;
+    }
+
+    public InetAddress getSourceAddress() {
+        return sourceAddress;
+    }
+
+    public int getSourcePort() {
+        return sourcePort;
     }
 
     public InetAddress getDestAddress() {
@@ -85,6 +82,15 @@ public abstract class Message implements Serializable {
 
     public void setDest(ChordInterface nextHopDest) throws RemoteException {
         this.setDest(nextHopDest.getAddress(), nextHopDest.getPort());
+    }
+
+    public void setSource(ChordNode node) {
+        this.sourceAddress = node.getAddress();
+        this.sourcePort = node.getPort();
+    }
+
+    public void setDestId(Integer destId) {
+        this.destId = destId;
     }
 
     @Override

@@ -4,14 +4,8 @@ public class RemovedMsg extends Message {
     public static final String type = "REMOVED";
     private final Integer chunkNo;
 
-    public RemovedMsg(String version, String id, String fileId, int chunkNo) {
-        super(version, id, fileId);
-        this.header = version + " " +
-                type + " " +
-                id + " " +
-                fileId + " " +
-                chunkNo + " " +
-                Message.CRLF + Message.CRLF;
+    public RemovedMsg(String fileId, int chunkNo) {
+        super(fileId);
         this.chunkNo = chunkNo;
     }
 
@@ -22,11 +16,6 @@ public class RemovedMsg extends Message {
     @Override
     public String getType() {
         return type;
-    }
-
-    @Override
-    public int getHeaderLen() {
-        return 5;
     }
 
     @Override

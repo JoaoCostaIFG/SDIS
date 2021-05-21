@@ -4,24 +4,14 @@ public class IDeletedMsg extends Message {
     public static final String type = "IDELETED";
     private final String fileId;
 
-    public IDeletedMsg(String version, String id, String fileId) {
-        super(version, id, fileId);
+    public IDeletedMsg(String fileId) {
+        super(fileId);
         this.fileId = fileId;
-        this.header = version + " " +
-                type + " " +
-                id + " " +
-                this.fileId + " " +
-                Message.CRLF + Message.CRLF;
     }
 
     @Override
     public String getType() {
         return type;
-    }
-
-    @Override
-    public int getHeaderLen() {
-        return 4;
     }
 
     @Override

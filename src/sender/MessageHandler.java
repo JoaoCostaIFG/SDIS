@@ -1,37 +1,32 @@
 package sender;
 
+import chord.ChordNode;
 import file.DigestFile;
 import message.*;
 import state.State;
 
 import java.io.IOException;
+import java.net.InetAddress;
+import java.rmi.RemoteException;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class MessageHandler {
     private final Integer selfID;
     private final SockThread sock;
-    private final ConcurrentHashMap<Observer, Boolean> observers;
+    private final ChordNode chordNode;
 
-    public MessageHandler(int id, SockThread sock) {
+    public MessageHandler(int id, SockThread sock, ChordNode chordNode) {
         this.selfID = id;
         this.sock = sock;
-        this.sock.setHandler(this);
-        this.observers = new ConcurrentHashMap<>();
-    }
-
-    public void addObserver(Observer obs) {
-        this.observers.put(obs, false);
-    }
-
-    public void rmObserver(Observer obs) {
-        this.observers.remove(obs);
+        this.chordNode = chordNode;
     }
 
     private void handleMsg(PutChunkMsg message) {
+        // TODO check if we sent this message
         boolean iStoredTheChunk = false;
         synchronized (State.st) {
-            // do not handle files we initiated the backup of
-            if (State.st.isInitiator(message.getFileId())) return;
+            // do not handle files we initiated the backup of TODO we don't want this
+            // if (State.st.isInitiator(message.getFileId())) return;
 
             // always register the existence of this file
             State.st.addFileEntry(message.getFileId(), message.getReplication());
@@ -60,16 +55,30 @@ public class MessageHandler {
 
         // send STORED reply message if we stored the chunk/already had it
         if (iStoredTheChunk) {
-//            StoredMsg response = new StoredMsg(this.protocolVersion, this.selfID,
-//                    message.getFileId(), message.getChunkNo());
-//            StoredSender storedSender = new StoredSender(this.MCSock, response, this);
-//            storedSender.run();
+                StoredMsg response = new StoredMsg(message.getFileId(), this.sock.getAddress(), this.sock.getPort(),
+                        message.getChunkNo());
+                response.setDest(message.getSourceAddress(), message.getSourcePort());
+                this.sock.send(response);
+                message.decreaseCurrentRep(); // Update current rep in putchunk chain
         }
+
+        if (message.getCurrentRep() == 1) // We don't need to resend the putchunk message further, we are last in the chain
+            return;
+
+        try {
+            message.setDest(chordNode.getSuccessor());
+        } catch (RemoteException e) {
+            e.printStackTrace();
+        }
+        message.setDestId(null); // We don't need the chord ring to hop to the dest, we already know it
+        // message.setSource(chordNode); TODO do we want this
+        this.sock.send(message);
     }
 
     private void handleMsg(StoredMsg message) {
+        System.err.println("Got stored");
         synchronized (State.st) {
-            State.st.incrementChunkDeg(message.getFileId(), message.getChunkNo(), message.getSenderId());
+            // State.st.incrementChunkDeg(message.getFileId(), message.getChunkNo(), message.getSenderId());
         }
     }
 
@@ -83,15 +92,24 @@ public class MessageHandler {
 
     private void handleMsg(GetChunkMsg message) {
         synchronized (State.st) {
-            if (!State.st.amIStoringChunk(message.getFileId(), message.getChunkNo()))
+            if (!State.st.amIStoringChunk(message.getFileId(), message.getChunkNo())) { // Resend to next chord in ring
+                try {
+                    message.setDest(chordNode.getSuccessor());
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
+                message.setDestId(null); // We don't need the chord ring to hop to the dest, we already know it
+                // message.setSource(chordNode); TODO do we want this
+                this.sock.send(message);
                 return;
+            }
         }
 
-//        ChunkMsg response = new ChunkMsg(this.protocolVersion, this.selfID,
-//                message.getFileId(), message.getChunkNo());
-//        MessageSender<? extends Message> chunkSender;
-//        chunkSender = new ChunkSender(this.MDRSock, response, this);
-//        chunkSender.run();
+        ChunkMsg response = new ChunkMsg(message.getFileId(), message.getChunkNo(), this.sock.getAddress(),
+                this.sock.getPort(), null);
+        response.setDest(message.getSourceAddress(), message.getSourcePort());
+        response.setSource(this.chordNode);
+        this.sock.send(response);
     }
 
     private void handleMsg(RemovedMsg message) {
@@ -132,20 +150,9 @@ public class MessageHandler {
     // TODO verify message came from the socket?
     public void handleMessage(Message message) {
         System.out.println("\tReceived: " + message);
-        // notify observers
-        for (Observer obs : this.observers.keySet()) {
-            obs.notify(message);
-        }
 
-        // IMP we want to skip handling the message only after we informed the msg to the chord node
-        if (!message.getDestId().equals(this.selfID)) {
-            System.out.println("This message isn't for us");
-            return;
-        }
-
-        // unreachable
         if (PutChunkMsg.class.equals(message.getClass())) {
-//            handleMsg((PutChunkMsg) message);
+            handleMsg((PutChunkMsg) message);
         } else if (StoredMsg.class.equals(message.getClass())) {
             handleMsg((StoredMsg) message);
         } else if (DeleteMsg.class.equals(message.getClass())) {

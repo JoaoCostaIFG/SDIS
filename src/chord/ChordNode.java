@@ -33,9 +33,8 @@ public class ChordNode implements ChordInterface, Observer {
         this.address = address;
         this.port = port;
         this.id = ChordNode.genId(address, port);
-        this.sock = new SockThread("sock", address, port);
-        this.messageHandler = new MessageHandler(this.id, this.sock);
-        this.messageHandler.addObserver(this);
+        this.sock = new SockThread("sock", address, port, this);
+        this.messageHandler = new MessageHandler(this.id, this.sock, this);
 
         this.registry = registry;
         this.nextFingerToFix = 0;
@@ -301,7 +300,15 @@ public class ChordNode implements ChordInterface, Observer {
 
     @Override
     public void notify(Message message) {
-        if (!message.getDestId().equals(this.id)) // If message isn't for us
-            this.send(message); // resend it through the chord ring
+        try {
+            // Message is for us
+            if (message.getDestId() == null || // If destId of the message, the message was sent directly and without hops for us
+                    ChordNode.inBetween(message.getDestId(), this.id, getSuccessor().getId(), true, false))
+                messageHandler.handleMessage(message);
+            else // If message isn't for us
+                this.send(message); // resend it through the chord ring
+        } catch (RemoteException e) {
+            System.err.println("Couldn't figure out if message " + message + " is for me or not");
+        }
     }
 }

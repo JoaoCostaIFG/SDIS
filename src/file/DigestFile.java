@@ -1,11 +1,13 @@
 package file;
 
+import chord.ChordNode;
 import state.State;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,6 +18,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+
+import static java.lang.Math.pow;
 
 public class DigestFile {
     private final static Integer CHUNK_LEN = 256;
@@ -73,6 +77,19 @@ public class DigestFile {
             e.printStackTrace();
         }
         return "";
+    }
+
+    /* returns id of a chunk */
+    public static int getId(byte[] chunk) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-1");
+            byte[] hash = digest.digest(chunk);
+            ByteBuffer wrapped = ByteBuffer.wrap(hash);
+            int div = (int) Math.floor(pow(2, ChordNode.m));
+            return Math.floorMod(wrapped.getInt(), div);
+        } catch (NoSuchAlgorithmException ignored) {
+        }
+        return -1;
     }
 
     /* checks if a file needs more chunks to be stored than the maximum allowed */

@@ -4,14 +4,9 @@ public class DeleteMsg extends Message {
     public static final String type = "DELETE";
     private final String fileId;
 
-    public DeleteMsg(String version, String id, String fileId) {
-        super(version, id, fileId);
+    public DeleteMsg(String fileId) {
+        super(fileId);
         this.fileId = fileId;
-        this.header = version + " " +
-                type + " " +
-                id + " " +
-                this.fileId + " " +
-                Message.CRLF + Message.CRLF;
     }
 
     public String getFileId() {
@@ -21,11 +16,6 @@ public class DeleteMsg extends Message {
     @Override
     public String getType() {
         return type;
-    }
-
-    @Override
-    public int getHeaderLen() {
-        return 4;
     }
 
     @Override

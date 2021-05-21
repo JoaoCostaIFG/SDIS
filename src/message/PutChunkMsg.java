@@ -1,29 +1,30 @@
 package message;
 
 import java.net.InetAddress;
-import java.nio.ByteBuffer;
 
 public class PutChunkMsg extends Message {
     public static final String type = "PUTCHUNK";
     private final Integer chunkNo;
     private final Integer replication;
     private final byte[] chunk;
+    private int currentRep;
 
-    public PutChunkMsg(String version, String id, String fileId,
-                       InetAddress sourceDest, int sourcePort, Integer destId,
-                       int chunkNo, int replication, byte[] chunk) {
-        super(version, id, fileId, sourceDest, sourcePort, destId);
-        this.header = version + " " +
-                type + " " +
-                id + " " +
-                fileId + " " +
-                chunkNo + " " +
-                replication + " " +
-                Message.CRLF + Message.CRLF;
+    public PutChunkMsg(String fileId,
+                       int chunkNo, byte[] chunk, int replication, InetAddress sourceDest, int sourcePort, Integer destId) {
+        super(fileId, sourceDest, sourcePort, destId);
         this.fileId = fileId;
         this.chunkNo = chunkNo;
         this.replication = replication;
         this.chunk = chunk;
+        this.currentRep = replication;
+    }
+
+    public void decreaseCurrentRep() {
+        --this.currentRep;
+    }
+
+    public int getCurrentRep() {
+        return currentRep;
     }
 
     public String getFileId() {
@@ -43,19 +44,12 @@ public class PutChunkMsg extends Message {
     }
 
     @Override
-    public byte[] getContent() {
-        byte[] packetContent = super.getContent();
-        return ByteBuffer.allocate(packetContent.length + this.chunk.length)
-                .put(packetContent).put(this.chunk).array();
-    }
-
-    @Override
     public String getType() {
         return type;
     }
 
     @Override
-    public int getHeaderLen() {
-        return 6;
+    public String toString() {
+        return super.toString() + " FileId:" + fileId + " ChunkNo:" + chunkNo + " Rep:" + replication + " CurrRep:" + currentRep;
     }
 }
