@@ -1,11 +1,11 @@
 package sender;
 
-import file.DigestFile;
 import message.Message;
 
 import javax.net.ssl.*;
 import java.io.*;
-import java.net.*;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
@@ -28,18 +28,6 @@ public class SockThread implements Runnable {
     private MessageHandler handler;
 
     private SSLContext sslc;
-    private SSLEngine clientEngine;         // client Engine
-    private ByteBuffer clientIn, clientOut; // read/write side of client Engine
-    private SSLEngine serverEngine;         // server Engine
-    private ByteBuffer serverIn, serverOut; // read/write side of server Engine
-
-    /*
-     * For data transport, this example uses local ByteBuffers.  This
-     * isn't really useful, but the purpose of this example is to show
-     * SSLEngine concepts, not how to do network transport.
-     */
-    private ByteBuffer cTOs;    // "reliable" transport client->server
-    private ByteBuffer sTOc;    // "reliable" transport server->client
 
     public SockThread(String name, InetAddress ip, Integer port) throws IOException {
         this.name = name;
@@ -101,6 +89,107 @@ public class SockThread implements Runnable {
         worker.start();
     }
 
+    private static void runDelegatedTasks(SSLEngine engine) throws Exception {
+        if (engine.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.NEED_TASK) {
+            Runnable runnable;
+            while ((runnable = engine.getDelegatedTask()) != null) {
+                System.err.println("\trunning delegated task...");
+                runnable.run();
+            }
+            SSLEngineResult.HandshakeStatus hsStatus = engine.getHandshakeStatus();
+            if (hsStatus == SSLEngineResult.HandshakeStatus.NEED_TASK) {
+                throw new Exception(
+                        "handshake shouldn't need additional tasks");
+            }
+            System.err.println("\tnew HandshakeStatus: " + hsStatus);
+        }
+    }
+
+    private int doHandshake(SSLEngine engine, SocketChannel channel,
+                            ByteBuffer myNetData, ByteBuffer peerNetData) throws Exception {
+        System.err.println("Handshaking...");
+
+        // Create byte buffers to use for holding application data
+        int appBufferSize = engine.getSession().getApplicationBufferSize();
+        ByteBuffer myAppData = ByteBuffer.allocate(appBufferSize);
+        ByteBuffer peerAppData = ByteBuffer.allocate(appBufferSize);
+
+        SSLEngineResult res;
+        engine.beginHandshake();
+        while (true) {
+            switch (engine.getHandshakeStatus()) {
+                case NEED_UNWRAP:
+                    // receive handshake data from peer
+                    while (peerNetData.hasRemaining() && channel.read(peerNetData) != -1) ;
+
+                    peerNetData.flip();
+                    res = engine.unwrap(peerNetData, peerAppData);
+                    peerNetData.compact();
+
+                    switch (res.getStatus()) {
+                        case BUFFER_OVERFLOW:
+                            // the client maximum fragment size config does not work?
+                            throw new Exception("Buffer overflow: " +
+                                    "incorrect client maximum fragment size");
+                        case BUFFER_UNDERFLOW:
+                            // TODO
+                            // bad packet, or the client maximum fragment size
+                            // config does not work?
+                            break;
+                        case CLOSED:
+                        case OK:
+                            // TODO
+                            System.err.println("Handshaking...");
+                            continue;
+                    }
+                    break;
+                case NEED_WRAP:
+                    while (myNetData.hasRemaining())
+                        channel.write(myNetData);
+                    myNetData.clear();
+                    res = engine.wrap(myAppData, myNetData);
+
+                    switch (res.getStatus()) {
+                        case OK:
+                            myNetData.flip();
+                            while (myNetData.hasRemaining())
+                                channel.write(myNetData);
+                            break;
+                    }
+                    break;
+                case NEED_TASK:
+                    try {
+                        runDelegatedTasks(engine);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                    break;
+                case NOT_HANDSHAKING:
+                case FINISHED:
+                default:
+                    return 0;
+            }
+        }
+    }
+
+    private ByteBuffer[] createBuffers(SSLEngine engine) {
+        SSLSession session = engine.getSession();
+        // allocate extra space to prevent some overflows
+        int appBufferMax = session.getApplicationBufferSize() + 50;
+        int netBufferMax = session.getPacketBufferSize();
+
+        ByteBuffer[] ret = new ByteBuffer[4];
+        // my appData
+        ret[0] = ByteBuffer.allocate(appBufferMax);
+        // my netData
+        ret[1] = ByteBuffer.allocate(netBufferMax);
+        // peer appData
+        ret[2] = ByteBuffer.allocate(appBufferMax);
+        // peer netData
+        ret[3] = ByteBuffer.allocate(netBufferMax);
+        return ret;
+    }
+
     @Override
     public void run() {
         running.set(true);
@@ -113,17 +202,30 @@ public class SockThread implements Runnable {
                 continue;
             }
 
-            ByteBuffer inBuff = ByteBuffer.allocate(DigestFile.MAX_CHUNK_SIZE + 1000);
-            while (true) {
-                try {
-                    if (!(inBuff.hasRemaining() && socketChannel.read(inBuff) != -1)) break;
-                } catch (IOException e) {
-                    e.printStackTrace();
-                    continue;
-                }
+            // create SSLEngine
+            SSLEngine engine = this.sslc.createSSLEngine();
+            engine.setUseClientMode(false);
+            engine.setNeedClientAuth(true);
+            // create buffers
+            ByteBuffer[] bufs = this.createBuffers(engine);
+            try {
+                this.doHandshake(engine, socketChannel, bufs[1], bufs[3]);
+            } catch (Exception e) {
+                e.printStackTrace();
             }
 
-            ByteArrayInputStream bis = new ByteArrayInputStream(inBuff.array());
+            // receive loop
+
+            // close
+            System.err.println("Done");
+            engine.closeOutbound();
+            try {
+                socketChannel.close();
+            } catch (IOException ignored) {
+            }
+
+            // create message instance from the received bytes
+            ByteArrayInputStream bis = new ByteArrayInputStream(bufs[2].array());
             Message msg;
             try {
                 ObjectInput in = new ObjectInputStream(bis);
@@ -134,11 +236,12 @@ public class SockThread implements Runnable {
                 continue;
             }
 
+            System.err.println(msg.getDestAddress());
             this.threadPool.execute(
                     () -> {
-                        assert msg != null;
                         handler.handleMessage(msg);
-                    });
+                    }
+            );
         }
     }
 
@@ -149,147 +252,53 @@ public class SockThread implements Runnable {
             int port = message.getDestPort();
             // create socket channel
             SocketChannel socketChannel = SocketChannel.open();
-            socketChannel.configureBlocking(false);
+            socketChannel.configureBlocking(true); // TODO false
             socketChannel.connect(new InetSocketAddress(address, port));
-
-            // TODO busy-wait
             while (!socketChannel.finishConnect()) {
+                // TODO busy-wait
                 System.out.println("Connecting...");
-                try {
-                    Thread.sleep(100);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                    break;
-                }
             }
 
+            // create SSLEngine
+            System.out.println(address.getHostAddress());
+            SSLEngine engine = this.sslc.createSSLEngine(address.getHostAddress(), 443);
+            engine.setUseClientMode(true);
+            // create buffers
+            ByteBuffer[] bufs = this.createBuffers(engine);
+            try {
+                this.doHandshake(engine, socketChannel, bufs[1], bufs[3]);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+            // data to send
             try (ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
-                ObjectOutputStream out = new ObjectOutputStream(bos);
-                out.writeObject(message);
-                out.flush();
-                ByteBuffer clientOut = ByteBuffer.wrap(bos.toByteArray());
-                socketChannel.write(clientOut);
+                ObjectOutputStream outputStream = new ObjectOutputStream(bos);
+                outputStream.writeObject(message);
+                outputStream.flush();
+                bufs[0].put(bos.toByteArray());
+            } catch (Exception e) {
+                e.printStackTrace();
+                return;
             }
 
+            // send loop
+
+            // close
+            System.err.println("Done");
+            engine.closeOutbound();
             socketChannel.close();
-        } catch (IOException e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    private boolean isEngineClosed(SSLEngine engine) {
+        return engine.isOutboundDone() && engine.isInboundDone();
     }
 
     @Override
     public String toString() {
         return ip + ":" + port + "\n";
     }
-
-    // public void sslLoop() throws Exception {
-    //     boolean dataDone = false;
-
-    //     this.createSSLEngines();
-    //     this.createBuffers();
-
-    //     SSLEngineResult clientResult, serverResult;
-    //     while (!isEngineClosed(this.clientEngine) || !isEngineClosed(this.serverEngine)) {
-    //         /* SEND CLIENT DATA */
-    //         clientResult = this.clientEngine.wrap(clientOut, cTOs);
-    //         System.out.println("client wrap: " + clientResult);
-    //         runDelegatedTasks(clientResult, this.clientEngine);
-
-    //         this.socketChannel.write(cTOs);
-
-    //         /* READ CLIENT DATA */
-    //         this.socketChannel.read(cTOs);
-    //         this.cTOs.flip();
-
-    //         serverResult = this.serverEngine.unwrap(cTOs, serverIn);
-    //         System.out.println("server unwrap: " + serverResult);
-    //         runDelegatedTasks(serverResult, serverEngine);
-
-    //         /* SEND SERVER DATA */
-    //         serverResult = this.serverEngine.wrap(serverOut, sTOc);
-    //         System.out.println("server wrap: " + serverResult);
-    //         runDelegatedTasks(serverResult, serverEngine);
-
-    //         this.socketChannel.write(sTOc);
-
-    //         /* READ SERVER DATA */
-    //         this.socketChannel.read(sTOc);
-    //         this.sTOc.flip();
-
-    //         clientResult = this.clientEngine.unwrap(sTOc, clientIn);
-    //         System.out.println("client unwrap: " + clientResult);
-    //         runDelegatedTasks(clientResult, this.clientEngine);
-
-
-    //         this.cTOs.compact();
-    //         this.sTOc.compact();
-
-    //         if (!dataDone && (clientOut.limit() == serverIn.position()) &&
-    //                 (serverOut.limit() == clientIn.position())) {
-
-    //             /*
-    //              * A sanity check to ensure we got what was sent.
-    //              */
-    //             clientIn.flip();
-    //             System.out.println(new String(clientIn.array()));
-    //             serverIn.flip();
-    //             System.out.println(new String(serverIn.array()));
-
-    //             System.out.println("\tClosing clientEngine's *OUTBOUND*...");
-    //             clientEngine.closeOutbound();
-    //             serverEngine.closeOutbound();
-    //             dataDone = true;
-    //         }
-    //     }
-    // }
-
-    // /*
-    //  * If the result indicates that we have outstanding tasks to do,
-    //  * go ahead and run them in this thread.
-    //  */
-    // private static void runDelegatedTasks(SSLEngineResult result, SSLEngine engine) throws Exception {
-    //     if (result.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.NEED_TASK) {
-    //         Runnable runnable;
-    //         while ((runnable = engine.getDelegatedTask()) != null) {
-    //             System.out.println("\trunning delegated task...");
-    //             runnable.run();
-    //         }
-    //         SSLEngineResult.HandshakeStatus hsStatus = engine.getHandshakeStatus();
-    //         if (hsStatus == SSLEngineResult.HandshakeStatus.NEED_TASK) {
-    //             throw new Exception("handshake shouldn't need additional tasks");
-    //         }
-    //         System.out.println("\tnew HandshakeStatus: " + hsStatus);
-    //     }
-    // }
-
-    // private void createSSLEngines() {
-    //     // server side config
-    //     this.serverEngine = this.sslc.createSSLEngine();
-    //     this.serverEngine.setUseClientMode(false);
-    //     this.serverEngine.setNeedClientAuth(true);
-
-    //     // client side config
-    //     this.clientEngine = this.sslc.createSSLEngine("localhost", 8001);
-    //     this.clientEngine.setUseClientMode(true);
-    // }
-
-    // private void createBuffers() {
-    //     // assuming the buffer sizes are the same between client and server
-    //     SSLSession session = this.clientEngine.getSession();
-    //     int appBufferMax = session.getApplicationBufferSize();
-    //     int netBufferMax = session.getPacketBufferSize();
-
-    //     this.clientIn = ByteBuffer.allocate(appBufferMax + 50);
-    //     this.serverIn = ByteBuffer.allocate(appBufferMax + 50);
-
-    //     this.cTOs = ByteBuffer.allocate(netBufferMax);
-    //     this.sTOc = ByteBuffer.allocate(netBufferMax);
-
-    //     this.clientOut = ByteBuffer.wrap("Ola! Eu sou o cliente.".getBytes());
-    //     this.serverOut = ByteBuffer.wrap("Ola cliente! Eu sou o server".getBytes());
-    // }
-
-    // private boolean isEngineClosed(SSLEngine engine) {
-    //     return engine.isOutboundDone() && engine.isInboundDone();
-    // }
 }
