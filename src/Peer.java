@@ -307,7 +307,7 @@ public class Peer implements TestInterface {
 
         for (int i = 0; i < chunks.size(); ++i) {
             // only backup chunks that don't have the desired replication degree
-            if (State.st.isChunkOk(fileId, i)) continue;
+//            if (State.st.isChunkOk(fileId, i)) continue;
 
 //            PutChunkMsg putChunkMsg = new PutChunkMsg(this.id,
 //                fileId, i, replicationDegree, chunks.get(i));
@@ -420,12 +420,11 @@ public class Peer implements TestInterface {
 
             for (var chunkEntry : entry.getValue().getAllChunks().entrySet()) {
                 int chunkNo = chunkEntry.getKey();
-                int perceivedRep = chunkEntry.getValue().p1.size();
-                boolean isStored = chunkEntry.getValue().p2;
-                if (isStored && (force || perceivedRep > 1) && perceivedRep > 0) {
+                boolean isStored = chunkEntry.getValue();
+                if (isStored) {
                     // if we have the chunk stored => delete it && decrement perceived rep.
                     long chunkSize = DigestFile.deleteChunk(fileId, chunkNo); // updates state capacity
-                    State.st.decrementChunkDeg(fileId, chunkNo, this.id);
+//                    State.st.decrementChunkDeg(fileId, chunkNo, this.id);
                     State.st.setAmStoringChunk(fileId, chunkNo, false);
                     currentCap -= chunkSize;
 
@@ -500,22 +499,18 @@ public class Peer implements TestInterface {
                     filesIInitiated.append("\t\tDesired replication degree: ").append(fileInfo.getDesiredRep()).append("\n");
                     filesIInitiated.append("\t\tChunks:\n");
                     for (var chunkEntry : fileInfo.getAllChunks().entrySet()) {
-                        filesIInitiated.append("\t\t\tID: ").append(chunkEntry.getKey())
-                                .append(" - Perceived rep.: ").append(chunkEntry.getValue().p1.size()).append("\n");
+                        filesIInitiated.append("\t\t\tID: ").append(chunkEntry.getKey());
                     }
                 } else {
                     for (var chunkEntry : fileInfo.getAllChunks().entrySet()) {
                         int chunkId = chunkEntry.getKey();
-                        int perceivedRep = chunkEntry.getValue().p1.size();
-                        boolean isStored = chunkEntry.getValue().p2;
+                        boolean isStored = chunkEntry.getValue();
                         if (!isStored)  // only show chunks we are currently storing
                             continue;
 
                         chunksIStore.append("\tChunk ID: ").append(fileId).append(" - ").append(chunkId).append("\n");
                         chunksIStore.append("\t\tSize: ").append(DigestFile.getChunkSize(fileId, chunkId)).append("\n");
                         chunksIStore.append("\t\tDesired replication degree: ").append(fileInfo.getDesiredRep()).append("\n");
-                        chunksIStore.append("\t\tPeers storing this chunk: ").append(fileInfo.getPeersStoringChunk(chunkId)).append("\n");
-                        chunksIStore.append("\t\tPerceived replication degree: ").append(perceivedRep).append("\n");
                     }
                 }
             }

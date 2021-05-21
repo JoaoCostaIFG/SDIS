@@ -44,7 +44,6 @@ public class MessageHandler {
                     }
 
                     // Add self to map Entry
-                    State.st.incrementChunkDeg(message.getFileId(), message.getChunkNo(), this.selfID.toString());
                     State.st.setAmStoringChunk(message.getFileId(), message.getChunkNo(), true);
                     iStoredTheChunk = true;
                 }
@@ -92,6 +91,7 @@ public class MessageHandler {
 
     private void handleMsg(GetChunkMsg message) {
         synchronized (State.st) {
+            System.err.println(message.getFileId() + "---------------");
             if (!State.st.amIStoringChunk(message.getFileId(), message.getChunkNo())) { // Resend to next chord in ring
                 try {
                     message.setDest(chordNode.getSuccessor());
@@ -115,36 +115,36 @@ public class MessageHandler {
     private void handleMsg(RemovedMsg message) {
         int repDegree;
         boolean amInitiator;
-        synchronized (State.st) {
-            State.st.decrementChunkDeg(message.getFileId(), message.getChunkNo(), message.getSenderId());
-            if (State.st.isChunkOk(message.getFileId(), message.getChunkNo()))
-                return;
-            // we can only serve a chunk if:
-            // we are storing it or we are the initiator
-            amInitiator = State.st.isInitiator(message.getFileId());
-            if (!amInitiator && !State.st.amIStoringChunk(message.getFileId(), message.getChunkNo()))
-                return;
-            repDegree = State.st.getFileDeg(message.getFileId());
-        }
+//        synchronized (State.st) {
+//            State.st.decrementChunkDeg(message.getFileId(), message.getChunkNo(), message.getSenderId());
+//            if (State.st.isChunkOk(message.getFileId(), message.getChunkNo()))
+//                return;
+//            // we can only serve a chunk if:
+//            // we are storing it or we are the initiator
+//            amInitiator = State.st.isInitiator(message.getFileId());
+//            if (!amInitiator && !State.st.amIStoringChunk(message.getFileId(), message.getChunkNo()))
+//                return;
+//            repDegree = State.st.getFileDeg(message.getFileId());
+//        }
 
-        try {
-            byte[] chunk;
-            if (amInitiator) {
-                chunk = DigestFile.divideFileChunk(State.st.getFileInfo(message.getFileId()).getFilePath(),
-                        message.getChunkNo());
-            } else {
-                chunk = DigestFile.readChunk(message.getFileId(), message.getChunkNo());
-            }
+//        try {
+//            byte[] chunk;
+//            if (amInitiator) {
+//                chunk = DigestFile.divideFileChunk(State.st.getFileInfo(message.getFileId()).getFilePath(),
+//                        message.getChunkNo());
+//            } else {
+//                chunk = DigestFile.readChunk(message.getFileId(), message.getChunkNo());
+//            }
 
 //            PutChunkMsg putChunkMsg = new PutChunkMsg(this.protocolVersion, this.selfID,
 //                    message.getFileId(), message.getChunkNo(), repDegree, chunk);
 //            RemovedPutchunkSender removedPutchunkSender = new RemovedPutchunkSender(this.MDBSock, putChunkMsg,
 //                    this);
 //            removedPutchunkSender.run();
-        } catch (Exception e) {
-            e.printStackTrace();
-            System.err.println("Failed constructing reply for " + message.getType());
-        }
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//            System.err.println("Failed constructing reply for " + message.getType());
+//        }
     }
 
     // TODO verify message came from the socket?

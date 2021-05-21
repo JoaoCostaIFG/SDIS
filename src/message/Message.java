@@ -27,6 +27,7 @@ public abstract class Message implements Serializable {
 
     // TODO cleanup this
     public Message(String fileId) {
+        this.fileId = fileId;
         this.path = new ArrayList<>();
     }
 

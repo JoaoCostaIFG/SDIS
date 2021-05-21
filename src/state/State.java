@@ -18,14 +18,12 @@ public class State implements Serializable {
     // fileId -> fileInformation
     private final ConcurrentMap<String, FileInfo> replicationMap;
     // peerId -> set(fileId's que tem a dar delete)
-    private final ConcurrentMap<String, HashSet<String>> undeletedFilesByPeer;
     private volatile Long maxDiskSpaceB;
     private volatile transient long filledStorageSizeB;
 
     private State() {
         this.tasks = new ConcurrentHashMap<>();
         this.replicationMap = new ConcurrentHashMap<>();
-        this.undeletedFilesByPeer = new ConcurrentHashMap<>();
         this.maxDiskSpaceB = -1L;
     }
 
@@ -121,13 +119,6 @@ public class State implements Serializable {
         return this.maxDiskSpaceB >= 0 && (this.filledStorageSizeB >= this.maxDiskSpaceB);
     }
 
-    public boolean isChunkOk(String fileId, int chunkNo) {
-        int desiredRepDeg = this.getFileDeg(fileId);
-        int chunkDeg = this.getChunkDeg(fileId, chunkNo);
-
-        return chunkDeg >= desiredRepDeg;
-    }
-
     public boolean isInitiator(String fileId) {
         if (!this.replicationMap.containsKey(fileId)) return false;
         return this.replicationMap.get(fileId).isInitiator();
@@ -179,62 +170,6 @@ public class State implements Serializable {
         if (!this.replicationMap.containsKey(fileId)) return 0;
 
         return this.replicationMap.get(fileId).getDesiredRep();
-    }
-
-    public int getChunkDeg(String fileId, int chunkNo) {
-        // perceived chunk rep
-        if (!this.replicationMap.containsKey(fileId)) return 0;
-
-        return this.replicationMap.get(fileId).getChunkPerceivedRep(chunkNo);
-    }
-
-    public void incrementChunkDeg(String fileId, int chunkNo, String peerId) {
-        if (!this.replicationMap.containsKey(fileId)) return;
-        this.replicationMap.get(fileId).incrementChunkDeg(chunkNo, peerId);
-    }
-
-    public void decrementChunkDeg(String fileId, int chunkNo, String peerId) {
-        if (!this.replicationMap.containsKey(fileId)) return;
-        this.replicationMap.get(fileId).decrementChunkDeg(chunkNo, peerId);
-    }
-
-    // UNDELETED PEER FILES
-    public void addUndeletedPair(String peerId, String fileId) {
-        if (!this.undeletedFilesByPeer.containsKey(peerId))
-            this.undeletedFilesByPeer.put(peerId, new HashSet<>() {{
-                add(fileId);
-            }});
-        this.undeletedFilesByPeer.get(peerId).add(fileId);
-    }
-
-    public boolean removeUndeletedPair(String peerId, String fileId) {
-        if (!this.undeletedFilesByPeer.containsKey(peerId))
-            return false;
-
-        Set<String> s = this.undeletedFilesByPeer.get(peerId);
-        s.remove(fileId);
-        if (s.size() == 0)
-            this.undeletedFilesByPeer.remove(peerId);
-
-        return true;
-    }
-
-    public Set<String> getFilesUndeletedByPeer(String peerId) {
-        return this.undeletedFilesByPeer.get(peerId);
-    }
-
-    public void ignorePeerDeletedFiles(String peerId) {
-        this.undeletedFilesByPeer.remove(peerId);
-    }
-
-    public boolean notToDeleteAnymore(String fileId) {
-        boolean someoneHadIt = false;
-        for (var entry : this.undeletedFilesByPeer.entrySet()) {
-            if (this.removeUndeletedPair(entry.getKey(), fileId))
-                someoneHadIt = true;
-        }
-
-        return someoneHadIt;
     }
 
     // OTHER
