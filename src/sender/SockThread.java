@@ -89,87 +89,115 @@ public class SockThread implements Runnable {
         worker.start();
     }
 
-    private static void runDelegatedTasks(SSLEngine engine) throws Exception {
-        if (engine.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.NEED_TASK) {
-            Runnable runnable;
-            while ((runnable = engine.getDelegatedTask()) != null) {
-                System.err.println("\trunning delegated task...");
-                runnable.run();
-            }
-            SSLEngineResult.HandshakeStatus hsStatus = engine.getHandshakeStatus();
-            if (hsStatus == SSLEngineResult.HandshakeStatus.NEED_TASK) {
-                throw new Exception(
-                        "handshake shouldn't need additional tasks");
-            }
-            System.err.println("\tnew HandshakeStatus: " + hsStatus);
+    private static void runDelegatedTasks(SSLEngine engine) {
+        Runnable task;
+        while ((task = engine.getDelegatedTask()) != null) {
+            System.err.println("\trunning delegated task...");
+            task.run();
         }
     }
 
-    private int doHandshake(SSLEngine engine, SocketChannel channel,
-                            ByteBuffer myNetData, ByteBuffer peerNetData) throws Exception {
+    private ByteBuffer enlargeBuffer(ByteBuffer oldBuf, int proposedSize) {
+        ByteBuffer replaceBuffer = ByteBuffer.allocate(proposedSize <= oldBuf.limit() ?
+                proposedSize * 2 : proposedSize);
+        oldBuf.flip();
+        replaceBuffer.put(oldBuf);
+        return replaceBuffer;
+    }
+
+    private ByteBuffer enlargeNetBuffer(SSLEngine engine, ByteBuffer oldBuf) {
+        int proposedSize = engine.getSession().getPacketBufferSize();
+        return this.enlargeBuffer(oldBuf, proposedSize);
+    }
+
+    private ByteBuffer enlargeAppBuffer(SSLEngine engine, ByteBuffer oldBuf) {
+        int proposedSize = engine.getSession().getApplicationBufferSize();
+        return this.enlargeBuffer(oldBuf, proposedSize);
+    }
+
+    private int doHandshake(SSLEngine engine, SocketChannel socketChannel,
+                            ByteBuffer myNetData, ByteBuffer peerNetData) throws IOException {
         System.err.println("Handshaking...");
 
         // Create byte buffers to use for holding application data
-        int appBufferSize = engine.getSession().getApplicationBufferSize();
+        int appBufferSize = engine.getSession().getApplicationBufferSize() + 50;
         ByteBuffer myAppData = ByteBuffer.allocate(appBufferSize);
         ByteBuffer peerAppData = ByteBuffer.allocate(appBufferSize);
+        myNetData.clear();
+        peerNetData.clear();
 
-        SSLEngineResult res;
         engine.beginHandshake();
-        while (true) {
-            switch (engine.getHandshakeStatus()) {
-                case NEED_UNWRAP:
-                    // receive handshake data from peer
-                    while (peerNetData.hasRemaining() && channel.read(peerNetData) != -1) ;
 
+        SSLEngineResult result;
+        SSLEngineResult.HandshakeStatus hs = engine.getHandshakeStatus();
+        while (hs != SSLEngineResult.HandshakeStatus.FINISHED &&
+                hs != SSLEngineResult.HandshakeStatus.NOT_HANDSHAKING) {
+            System.out.println(hs);
+            switch (hs) {
+                case NEED_UNWRAP -> {
+                    if (socketChannel.read(peerNetData) < 0) {
+                        engine.closeInbound();
+                        engine.closeOutbound();
+                        hs = engine.getHandshakeStatus();
+                        break;
+                    }
                     peerNetData.flip();
-                    res = engine.unwrap(peerNetData, peerAppData);
+                    result = engine.unwrap(peerNetData, peerAppData);
                     peerNetData.compact();
-
-                    switch (res.getStatus()) {
+                    hs = result.getHandshakeStatus();
+                    switch (result.getStatus()) {
+                        case OK:
+                            break;
                         case BUFFER_OVERFLOW:
                             // the client maximum fragment size config does not work?
-                            throw new Exception("Buffer overflow: " +
-                                    "incorrect client maximum fragment size");
+                            throw new IOException("Buffer overflow: incorrect client maximum fragment size.");
                         case BUFFER_UNDERFLOW:
-                            // TODO
-                            // bad packet, or the client maximum fragment size
-                            // config does not work?
+                            // bad packet, or the client maximum fragment size config does not work?
+                            peerNetData = this.enlargeNetBuffer(engine, peerNetData);
                             break;
                         case CLOSED:
-                        case OK:
-                            // TODO
-                            System.err.println("Handshaking...");
-                            continue;
-                    }
-                    break;
-                case NEED_WRAP:
-                    while (myNetData.hasRemaining())
-                        channel.write(myNetData);
-                    myNetData.clear();
-                    res = engine.wrap(myAppData, myNetData);
-
-                    switch (res.getStatus()) {
-                        case OK:
-                            myNetData.flip();
-                            while (myNetData.hasRemaining())
-                                channel.write(myNetData);
+                            if (engine.isOutboundDone()) {
+                                return 1;
+                            } else {
+                                engine.closeOutbound();
+                                hs = engine.getHandshakeStatus();
+                            }
                             break;
                     }
-                    break;
-                case NEED_TASK:
-                    try {
-                        runDelegatedTasks(engine);
-                    } catch (Exception e) {
-                        e.printStackTrace();
+                }
+                case NEED_WRAP -> {
+                    myNetData.clear();
+                    result = engine.wrap(myAppData, myNetData);
+                    hs = result.getHandshakeStatus();
+                    switch (result.getStatus()) {
+                        case OK -> {
+                            myNetData.flip();
+                            while (myNetData.hasRemaining())
+                                socketChannel.write(myNetData);
+                        }
+                        case BUFFER_OVERFLOW -> {
+                            // the client maximum fragment size config does not work?
+                            myNetData = this.enlargeAppBuffer(engine, myNetData);
+                        }
+                        case BUFFER_UNDERFLOW -> {
+                            throw new IOException("Buffer underflow on wrap.");
+                        }
+                        case CLOSED -> {
+                            myNetData.flip();
+                            while (myNetData.hasRemaining())
+                                socketChannel.write(myNetData);
+                            peerNetData.clear();
+                        }
                     }
-                    break;
-                case NOT_HANDSHAKING:
-                case FINISHED:
-                default:
-                    return 0;
+                }
+                case NEED_TASK -> {
+                    runDelegatedTasks(engine);
+                    hs = engine.getHandshakeStatus();
+                }
+                default -> throw new IOException("WTF?");
             }
         }
+        return 0;
     }
 
     private ByteBuffer[] createBuffers(SSLEngine engine) {
@@ -252,7 +280,7 @@ public class SockThread implements Runnable {
             int port = message.getDestPort();
             // create socket channel
             SocketChannel socketChannel = SocketChannel.open();
-            socketChannel.configureBlocking(true); // TODO false
+            socketChannel.configureBlocking(false);
             socketChannel.connect(new InetSocketAddress(address, port));
             while (!socketChannel.finishConnect()) {
                 // TODO busy-wait
