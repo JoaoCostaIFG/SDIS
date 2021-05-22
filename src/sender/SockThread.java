@@ -21,7 +21,6 @@ public class SockThread implements Runnable {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final ExecutorService threadPool =
             Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
-    private final String name;
     private final ServerSocketChannel serverSocketChannel;
     private final InetAddress ip;
     private final Integer port;
@@ -29,8 +28,7 @@ public class SockThread implements Runnable {
 
     private SSLContext sslc;
 
-    public SockThread(String name, InetAddress ip, Integer port) throws IOException {
-        this.name = name;
+    public SockThread(InetAddress ip, Integer port) throws IOException {
         this.ip = ip;
         this.port = port;
 
@@ -62,10 +60,6 @@ public class SockThread implements Runnable {
         this.serverSocketChannel.bind(new InetSocketAddress(ip, port), MAX_CONNS);
     }
 
-    public String getName() {
-        return this.name;
-    }
-
     public void setHandler(MessageHandler handler) {
         this.handler = handler;
     }
@@ -89,87 +83,103 @@ public class SockThread implements Runnable {
         worker.start();
     }
 
-    private static void runDelegatedTasks(SSLEngine engine) {
-        Runnable task;
-        while ((task = engine.getDelegatedTask()) != null) {
-            System.err.println("\trunning delegated task...");
-            task.run();
-        }
-    }
-
     private ByteBuffer enlargeBuffer(ByteBuffer oldBuf, int proposedSize) {
-        ByteBuffer replaceBuffer = ByteBuffer.allocate(proposedSize <= oldBuf.limit() ?
+        return ByteBuffer.allocate(proposedSize <= oldBuf.limit() ?
                 proposedSize * 2 : proposedSize);
-        oldBuf.flip();
-        replaceBuffer.put(oldBuf);
-        return replaceBuffer;
     }
 
     private ByteBuffer enlargeNetBuffer(SSLEngine engine, ByteBuffer oldBuf) {
-        int proposedSize = engine.getSession().getPacketBufferSize();
-        return this.enlargeBuffer(oldBuf, proposedSize);
+        return this.enlargeBuffer(oldBuf, engine.getSession().getPacketBufferSize());
     }
 
     private ByteBuffer enlargeAppBuffer(SSLEngine engine, ByteBuffer oldBuf) {
-        int proposedSize = engine.getSession().getApplicationBufferSize();
-        return this.enlargeBuffer(oldBuf, proposedSize);
+        return this.enlargeBuffer(oldBuf, engine.getSession().getApplicationBufferSize());
+    }
+
+    private ByteBuffer handleNetUnderflow(SSLEngine engine, ByteBuffer buf) {
+        ByteBuffer newBuf = this.enlargeNetBuffer(engine, buf);
+        buf.flip();
+        newBuf.put(buf);
+        return newBuf;
+    }
+
+    private void runDelegatedTasks(SSLEngine engine) {
+        Runnable task;
+        while ((task = engine.getDelegatedTask()) != null) {
+            this.threadPool.execute(task);
+        }
     }
 
     private int doHandshake(SSLEngine engine, SocketChannel socketChannel,
                             ByteBuffer myNetData, ByteBuffer peerNetData) throws IOException {
-        System.err.println("Handshaking...");
+        // See example 8-2 of the docs
+        // https://docs.oracle.com/en/java/javase/11/security/java-secure-socket-extension-jsse-reference-guide.html#GUID-AC6700ED-ADC4-41EA-B111-2AEF2CBF7744
 
         // Create byte buffers to use for holding application data
         int appBufferSize = engine.getSession().getApplicationBufferSize() + 50;
         ByteBuffer myAppData = ByteBuffer.allocate(appBufferSize);
         ByteBuffer peerAppData = ByteBuffer.allocate(appBufferSize);
-        myNetData.clear();
-        peerNetData.clear();
 
         engine.beginHandshake();
 
-        SSLEngineResult result;
         SSLEngineResult.HandshakeStatus hs = engine.getHandshakeStatus();
         while (hs != SSLEngineResult.HandshakeStatus.FINISHED &&
                 hs != SSLEngineResult.HandshakeStatus.NOT_HANDSHAKING) {
-            System.out.println(hs);
+            SSLEngineResult res;
             switch (hs) {
                 case NEED_UNWRAP -> {
                     if (socketChannel.read(peerNetData) < 0) {
+                        // end of stream => no more io
                         engine.closeInbound();
                         engine.closeOutbound();
                         hs = engine.getHandshakeStatus();
                         break;
                     }
+                    // process incoming handshake data
                     peerNetData.flip();
-                    result = engine.unwrap(peerNetData, peerAppData);
+                    res = engine.unwrap(peerNetData, peerAppData);
                     peerNetData.compact();
-                    hs = result.getHandshakeStatus();
-                    switch (result.getStatus()) {
-                        case OK:
-                            break;
-                        case BUFFER_OVERFLOW:
-                            // the client maximum fragment size config does not work?
-                            throw new IOException("Buffer overflow: incorrect client maximum fragment size.");
-                        case BUFFER_UNDERFLOW:
+                    hs = res.getHandshakeStatus();
+                    // check status
+                    switch (res.getStatus()) {
+                        case OK -> {
+                            // do nothing ?
+                        }
+                        case BUFFER_UNDERFLOW -> {
                             // bad packet, or the client maximum fragment size config does not work?
-                            peerNetData = this.enlargeNetBuffer(engine, peerNetData);
-                            break;
-                        case CLOSED:
+                            // we can increase the size
+                            peerNetData = this.handleNetUnderflow(engine, peerNetData);
+                        }
+                        case BUFFER_OVERFLOW -> {
+                            // the client maximum fragment size config does not work?
+                            peerAppData = this.enlargeAppBuffer(engine, peerAppData);
+                        }
+                        case CLOSED -> {
                             if (engine.isOutboundDone()) {
+                                // the engine was closed but we still have handshake data to send => failed handshake
                                 return 1;
                             } else {
+                                // I guess we're done too
                                 engine.closeOutbound();
-                                hs = engine.getHandshakeStatus();
+                                hs = engine.getHandshakeStatus(); // collect new status
                             }
-                            break;
+                        }
+                        default -> throw new IllegalStateException("Unexpected value: " + res.getStatus());
                     }
                 }
                 case NEED_WRAP -> {
+                    // ensure that any previous net data in myNetData has been sent to the peer
+                    /*
+                    while (myNetData.hasRemaining())
+                        socketChannel.write(myNetData);
+                     */
+                    // clear the rest of the buffer
                     myNetData.clear();
-                    result = engine.wrap(myAppData, myNetData);
-                    hs = result.getHandshakeStatus();
-                    switch (result.getStatus()) {
+
+                    // generate handshake data to send (if possible)
+                    res = engine.wrap(myAppData, myNetData);
+                    hs = res.getHandshakeStatus();
+                    switch (res.getStatus()) {
                         case OK -> {
                             myNetData.flip();
                             while (myNetData.hasRemaining())
@@ -177,10 +187,11 @@ public class SockThread implements Runnable {
                         }
                         case BUFFER_OVERFLOW -> {
                             // the client maximum fragment size config does not work?
-                            myNetData = this.enlargeAppBuffer(engine, myNetData);
+                            // we can increase the size
+                            myNetData = this.enlargeNetBuffer(engine, myNetData);
                         }
                         case BUFFER_UNDERFLOW -> {
-                            throw new IOException("Buffer underflow on wrap.");
+                            throw new SSLException("Buffer underflow on wrap.");
                         }
                         case CLOSED -> {
                             myNetData.flip();
@@ -188,16 +199,38 @@ public class SockThread implements Runnable {
                                 socketChannel.write(myNetData);
                             peerNetData.clear();
                         }
+                        default -> throw new IllegalStateException("Unexpected value: " + res.getStatus());
                     }
                 }
                 case NEED_TASK -> {
                     runDelegatedTasks(engine);
                     hs = engine.getHandshakeStatus();
                 }
-                default -> throw new IOException("WTF?");
+                default -> throw new IllegalStateException("Unexpected value: " + hs);
             }
         }
+
         return 0;
+    }
+
+    private void closeSSLConnection(SSLEngine engine, SocketChannel socketChannel) {
+        if (engine.isOutboundDone() && engine.isInboundDone()) // if engine is closed => go away
+            return;
+
+        engine.closeOutbound();
+
+        int netBufferMax = engine.getSession().getPacketBufferSize();
+        ByteBuffer myNetData = ByteBuffer.allocate(netBufferMax);
+        ByteBuffer peerNetData = ByteBuffer.allocate(netBufferMax);
+        try {
+            this.doHandshake(engine, socketChannel, myNetData, peerNetData);
+        } catch (IOException ignored) {
+        }
+
+        try {
+            socketChannel.close();
+        } catch (IOException ignored) {
+        }
     }
 
     private ByteBuffer[] createBuffers(SSLEngine engine) {
@@ -237,20 +270,62 @@ public class SockThread implements Runnable {
             // create buffers
             ByteBuffer[] bufs = this.createBuffers(engine);
             try {
-                this.doHandshake(engine, socketChannel, bufs[1], bufs[3]);
+                if (this.doHandshake(engine, socketChannel, bufs[1], bufs[3]) != 0) {
+                    System.err.println("Handshake failed");
+                    continue; // go to next request
+                }
             } catch (Exception e) {
                 e.printStackTrace();
+                continue;
             }
 
-            // receive loop
-
-            // close
-            System.err.println("Done");
-            engine.closeOutbound();
-            try {
-                socketChannel.close();
-            } catch (IOException ignored) {
+            // receive loop - read TLS encoded data from peer
+            int n = 0;
+            while (n == 0) {
+                // == 0 -> no bytes read. Try again.
+                try {
+                    n = socketChannel.read(bufs[3]);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    break;
+                }
             }
+
+            if (n == -1) {
+                // end-of-stream
+                System.err.println("Got end of stream from peer. Attempting to close connection.");
+                this.closeSSLConnection(engine, socketChannel);
+                continue;
+            } else if (n > 0) {
+                // process incoming data
+                bufs[3].flip();
+                while (bufs[3].hasRemaining()) {
+                    SSLEngineResult res;
+                    try {
+                        res = engine.unwrap(bufs[3], bufs[2]);
+                    } catch (SSLException e) {
+                        e.printStackTrace();
+                        break;
+                    }
+                    switch (res.getStatus()) {
+                        case OK -> {
+                            bufs[2].flip();
+                            // flip it to create the message object bellow
+                        }
+                        case BUFFER_UNDERFLOW -> {
+                            bufs[3] = this.handleNetUnderflow(engine, bufs[3]);
+                        }
+                        case BUFFER_OVERFLOW -> {
+                            bufs[2] = this.enlargeAppBuffer(engine, bufs[2]);
+                        }
+                        case CLOSED -> {
+                            this.closeSSLConnection(engine, socketChannel);
+                        }
+                    }
+                }
+            }
+
+            this.closeSSLConnection(engine, socketChannel);
 
             // create message instance from the received bytes
             ByteArrayInputStream bis = new ByteArrayInputStream(bufs[2].array());
@@ -263,7 +338,7 @@ public class SockThread implements Runnable {
                 e.printStackTrace();
                 continue;
             }
-
+            // handle message
             System.err.println(msg.getDestAddress());
             this.threadPool.execute(
                     () -> {
@@ -271,58 +346,92 @@ public class SockThread implements Runnable {
                     }
             );
         }
+
     }
 
     public void send(Message message) {
         System.out.println("Sent: " + message);
+
+        InetAddress address = message.getDestAddress();
+        int port = message.getDestPort();
+        // create socket channel
+        SocketChannel socketChannel;
         try {
-            InetAddress address = message.getDestAddress();
-            int port = message.getDestPort();
-            // create socket channel
-            SocketChannel socketChannel = SocketChannel.open();
+            socketChannel = SocketChannel.open();
             socketChannel.configureBlocking(false);
             socketChannel.connect(new InetSocketAddress(address, port));
             while (!socketChannel.finishConnect()) {
                 // TODO busy-wait
                 System.out.println("Connecting...");
             }
+        } catch (IOException e) {
+            e.printStackTrace();
+            return;
+        }
 
-            // create SSLEngine
-            System.out.println(address.getHostAddress());
-            SSLEngine engine = this.sslc.createSSLEngine(address.getHostAddress(), 443);
-            engine.setUseClientMode(true);
-            // create buffers
-            ByteBuffer[] bufs = this.createBuffers(engine);
-            try {
-                this.doHandshake(engine, socketChannel, bufs[1], bufs[3]);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-
-            // data to send
-            try (ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
-                ObjectOutputStream outputStream = new ObjectOutputStream(bos);
-                outputStream.writeObject(message);
-                outputStream.flush();
-                bufs[0].put(bos.toByteArray());
-            } catch (Exception e) {
-                e.printStackTrace();
+        // create SSLEngine
+        System.out.println(address.getHostAddress());
+        SSLEngine engine = this.sslc.createSSLEngine(address.getHostAddress(), port);
+        engine.setUseClientMode(true);
+        // create buffers
+        ByteBuffer[] bufs = this.createBuffers(engine);
+        try {
+            if (this.doHandshake(engine, socketChannel, bufs[1], bufs[3]) != 0) {
+                System.err.println("Handshake failed");
                 return;
             }
-
-            // send loop
-
-            // close
-            System.err.println("Done");
-            engine.closeOutbound();
-            socketChannel.close();
         } catch (Exception e) {
             e.printStackTrace();
         }
-    }
 
-    private boolean isEngineClosed(SSLEngine engine) {
-        return engine.isOutboundDone() && engine.isInboundDone();
+        // data to send
+        try (ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+            ObjectOutputStream outputStream = new ObjectOutputStream(bos);
+            outputStream.writeObject(message);
+            outputStream.flush();
+            bufs[0].put(bos.toByteArray());
+            bufs[0].flip();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return;
+        }
+
+        // send loop
+        while (bufs[0].hasRemaining()) {
+            SSLEngineResult res;
+            try {
+                res = engine.wrap(bufs[0], bufs[1]);
+            } catch (SSLException e) {
+                e.printStackTrace();
+                return;
+            }
+            switch (res.getStatus()) {
+                case OK -> {
+                    bufs[1].flip();
+                    // send TLS encoded data to peer
+                    while (bufs[1].hasRemaining()) {
+                        try {
+                            socketChannel.write(bufs[1]);
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                            return;
+                        }
+                    }
+                }
+                case BUFFER_OVERFLOW -> {
+                    bufs[1] = this.enlargeNetBuffer(engine, bufs[1]);
+                }
+                case BUFFER_UNDERFLOW -> {
+                    System.err.println("Buffer underflow that I don't understand.");
+                    return;
+                }
+                case CLOSED -> {
+                    this.closeSSLConnection(engine, socketChannel);
+                }
+            }
+        }
+
+        this.closeSSLConnection(engine, socketChannel);
     }
 
     @Override

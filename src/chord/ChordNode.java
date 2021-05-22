@@ -33,7 +33,7 @@ public class ChordNode implements ChordInterface, Observer {
         this.address = address;
         this.port = port;
         this.id = ChordNode.genId(address, port);
-        this.sock = new SockThread("sock", address, port);
+        this.sock = new SockThread(address, port);
 
 
 
