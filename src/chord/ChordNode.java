@@ -33,8 +33,8 @@ public class ChordNode implements ChordInterface, Observer {
         this.address = address;
         this.port = port;
         this.id = ChordNode.genId(address, port);
-        this.sock = new SockThread("sock", address, port, this);
-        this.messageHandler = new MessageHandler(this.id, this.sock, this);
+        this.sock = new SockThread(address, port, this);
+        this.messageHandler = new MessageHandler(this.sock, this);
 
         this.registry = registry;
         this.nextFingerToFix = 0;
@@ -282,7 +282,7 @@ public class ChordNode implements ChordInterface, Observer {
         try {
             nextHopDest = closestPrecedingFinger(message.getDestId());
         } catch (RemoteException e) {
-            System.err.println("Could not find sucessor for message " + message);
+            System.err.println("Could not find successor for message " + message);
             e.printStackTrace();
         }
         assert nextHopDest != null;

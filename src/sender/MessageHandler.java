@@ -11,12 +11,10 @@ import java.rmi.RemoteException;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class MessageHandler {
-    private final Integer selfID;
     private final SockThread sock;
     private final ChordNode chordNode;
 
-    public MessageHandler(int id, SockThread sock, ChordNode chordNode) {
-        this.selfID = id;
+    public MessageHandler(SockThread sock, ChordNode chordNode) {
         this.sock = sock;
         this.chordNode = chordNode;
     }

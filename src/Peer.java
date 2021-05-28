@@ -174,11 +174,20 @@ public class Peer implements TestInterface {
         // cleanup the access point
         if (registry != null) {
             try {
-                registry.unbind(String.valueOf(chordNode.getId()));
+                if (this.chordNode != null) // Chord node might not be initiated yet
+                    registry.unbind(String.valueOf(chordNode.getId()));
+            } catch (RemoteException | NotBoundException e) {
+                System.err.println("Failed to unregister our chordNode from the RMI service.");
+            }
+            try {
                 registry.unbind(rmiName);
+            } catch (RemoteException | NotBoundException e) {
+                System.err.println("Failed to unregister our Peer instance from the RMI service.");
+            }
+            try {
                 UnicastRemoteObject.unexportObject(this, true);
             } catch (Exception e) {
-                System.err.println("Failed to unregister our RMI service.");
+                System.err.println("Failed to unexport our RMI service.");
             }
         }
 
