@@ -362,8 +362,7 @@ public class SockThread implements Runnable {
             socketChannel.configureBlocking(false);
             socketChannel.connect(new InetSocketAddress(address, port));
             while (!socketChannel.finishConnect()) {
-                // TODO busy-wait
-                System.out.println("Connecting...");
+                // busy-wait
             }
         } catch (IOException e) {
             e.printStackTrace();
