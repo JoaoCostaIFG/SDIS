@@ -11,12 +11,14 @@ import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.security.*;
 import java.security.cert.CertificateException;
+import java.util.Arrays;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class SockThread implements Runnable {
     private static final int MAX_CONNS = 5;
+    private static final int PACKET_MAX_SIZE = 70000;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final ExecutorService threadPool =
@@ -286,6 +288,8 @@ public class SockThread implements Runnable {
                 continue;
             }
 
+            bufs[3] = ByteBuffer.allocate(PACKET_MAX_SIZE);
+
             // receive loop - read TLS encoded data from peer
             int n = 0;
             while (n == 0) {
@@ -298,7 +302,7 @@ public class SockThread implements Runnable {
                 }
             }
 
-            ByteArrayOutputStream messageContent = new ByteArrayOutputStream();
+            ByteArrayOutputStream content = new ByteArrayOutputStream();
             if (n == -1) {
                 // end-of-stream
                 System.err.println("Got end of stream from peer. Attempting to close connection.");
@@ -308,6 +312,7 @@ public class SockThread implements Runnable {
                 // process incoming data
                 bufs[3].flip();
                 while (bufs[3].hasRemaining()) {
+                    bufs[2].clear();
                     SSLEngineResult res;
                     try {
                         res = engine.unwrap(bufs[3], bufs[2]);
@@ -320,7 +325,7 @@ public class SockThread implements Runnable {
                             // flip it to create the message object bellow
                             bufs[2].flip();
                             try {
-                                messageContent.write(bufs[2].array());
+                                content.write(Arrays.copyOfRange(bufs[2].array(), 0, bufs[2].limit()));
                             } catch (IOException e) {
                                 e.printStackTrace();
                             }
@@ -333,6 +338,7 @@ public class SockThread implements Runnable {
                             break;
                         case CLOSED:
                             this.closeSSLConnection(engine, socketChannel);
+
                             break;
                     }
                 }
@@ -340,7 +346,7 @@ public class SockThread implements Runnable {
 
             this.closeSSLConnection(engine, socketChannel);
             // create message instance from the received bytes
-            ByteArrayInputStream bis = new ByteArrayInputStream(messageContent.toByteArray());
+            ByteArrayInputStream bis = new ByteArrayInputStream(content.toByteArray());
             Message msg;
             try {
                 ObjectInput in = new ObjectInputStream(bis);
@@ -403,6 +409,7 @@ public class SockThread implements Runnable {
             return;
         }
 
+        bufs[0] = ByteBuffer.allocate(PACKET_MAX_SIZE);
         bufs[0].put(dataToSend);
         bufs[0].flip();
 
@@ -437,6 +444,7 @@ public class SockThread implements Runnable {
                     return;
                 case CLOSED:
                     this.closeSSLConnection(engine, socketChannel);
+                    bufs[0] = ByteBuffer.allocate(dataToSend.length + 1000);
                     break;
             }
         }
