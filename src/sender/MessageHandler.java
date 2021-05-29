@@ -6,9 +6,7 @@ import message.*;
 import state.State;
 
 import java.io.IOException;
-import java.net.InetAddress;
 import java.rmi.RemoteException;
-import java.util.concurrent.ConcurrentHashMap;
 
 public class MessageHandler {
     private final SockThread sock;
@@ -20,7 +18,6 @@ public class MessageHandler {
     }
 
     private void handleMsg(PutChunkMsg message) {
-        // TODO check if we sent this message
         boolean iStoredTheChunk = false;
         synchronized (State.st) {
             // do not handle files we initiated the backup of TODO we don't want this
@@ -41,17 +38,25 @@ public class MessageHandler {
                         State.st.updateStorageSize(-message.getChunk().length);
                     }
 
-                    // Add self to map Entry
-                    State.st.setAmStoringChunk(message.getFileId(), message.getChunkNo(), true);
+                    // Add sequence number
+                    State.st.setAmStoringChunk(message.getFileId(), message.getChunkNo(), message.getSeqNumber());
                     iStoredTheChunk = true;
                 }
             } else {
+                // Update sequence number
+                State.st.setAmStoringChunk(message.getFileId(), message.getChunkNo(), message.getSeqNumber());
                 iStoredTheChunk = true;
             }
         }
 
+        // I am responsible and i stored the message
+        if (iStoredTheChunk && message.getSeqNumber() == message.getReplication()) {
+            System.out.println("I am responsible for chunk " + message.getFileId() + " " + message.getChunkNo());
+            message.setSource(this.chordNode); // 'Subscribe' to all stored messages
+        }
+
         // send STORED reply message if we stored the chunk/already had it
-        if (iStoredTheChunk) {
+        if (iStoredTheChunk) { // TODO remover os stores maybe?
                 StoredMsg response = new StoredMsg(message.getFileId(), this.sock.getAddress(), this.sock.getPort(),
                         message.getChunkNo());
                 response.setDest(message.getSourceAddress(), message.getSourcePort());
@@ -59,7 +64,8 @@ public class MessageHandler {
                 message.decreaseCurrentRep(); // Update current rep in putchunk chain
         }
 
-        if (message.getCurrentRep() == 1) // We don't need to resend the putchunk message further, we are last in the chain
+        // Propagate putchunks through successors
+        if (message.getSeqNumber() == 0) // We don't need to resend the putchunk message further, we are last in the chain
             return;
 
         try {
@@ -68,9 +74,9 @@ public class MessageHandler {
             e.printStackTrace();
         }
         message.setDestId(null); // We don't need the chord ring to hop to the dest, we already know it
-        // message.setSource(chordNode); TODO do we want this
         this.sock.send(message);
     }
+
 
     private void handleMsg(StoredMsg message) {
         System.err.println("Got stored");
@@ -145,9 +151,18 @@ public class MessageHandler {
 //        }
     }
 
+    private boolean messageSentByUs(Message message) {
+        return (message.getSourcePort() == this.chordNode.getPort() &&
+                message.getSourceAddress().equals(this.chordNode.getAddress()));
+    }
+
     // TODO verify message came from the socket?
     public void handleMessage(Message message) {
-        System.out.println("\tReceived: " + message);
+
+        if (this.messageSentByUs(message)) {
+            System.out.println("\t\tMessage looped through network " + message);
+            return; // We sent this message and it has looped through the network TODO if getchunk say that it failed
+        }
 
         if (PutChunkMsg.class.equals(message.getClass())) {
             handleMsg((PutChunkMsg) message);

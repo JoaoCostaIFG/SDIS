@@ -7,7 +7,7 @@ public class PutChunkMsg extends Message {
     private final Integer chunkNo;
     private final Integer replication;
     private final byte[] chunk;
-    private int currentRep;
+    private int seqNumber;
 
     public PutChunkMsg(String fileId,
                        int chunkNo, byte[] chunk, int replication, InetAddress sourceDest, int sourcePort, Integer destId) {
@@ -16,15 +16,15 @@ public class PutChunkMsg extends Message {
         this.chunkNo = chunkNo;
         this.replication = replication;
         this.chunk = chunk;
-        this.currentRep = replication;
+        this.seqNumber = replication;
     }
 
     public void decreaseCurrentRep() {
-        --this.currentRep;
+        --this.seqNumber;
     }
 
-    public int getCurrentRep() {
-        return currentRep;
+    public int getSeqNumber() {
+        return seqNumber;
     }
 
     public String getFileId() {
@@ -50,6 +50,6 @@ public class PutChunkMsg extends Message {
 
     @Override
     public String toString() {
-        return super.toString() + " FileId:" + fileId + " ChunkNo:" + chunkNo + " Rep:" + replication + " CurrRep:" + currentRep;
+        return super.toString() + " FileId:" + fileId + " ChunkNo:" + chunkNo + " Rep:" + replication + " SeqNum:" + seqNumber;
     }
 }

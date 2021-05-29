@@ -1,17 +1,13 @@
 package state;
 
-import utils.Pair;
-
 import java.io.Serializable;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 public class FileInfo implements Serializable {
-    // chunkNo -> Se eu estou a dar store
-    private final ConcurrentMap<Integer, Boolean> chunkInfo;
+    // chunkNo -> Num de sequencia (-1 Se nao estou a dar store)
+    private final ConcurrentMap<Integer, Integer> chunkInfo;
     private String filePath = null;  // only set if we are the initiator
     private Integer desiredRep;
 
@@ -27,17 +23,17 @@ public class FileInfo implements Serializable {
 
     public void declareChunk(int chunkNo) {
         if (!this.chunkInfo.containsKey(chunkNo))
-            this.chunkInfo.put(chunkNo, false);
+            this.chunkInfo.put(chunkNo, -1);
     }
 
     public boolean amIStoringChunk(int chunkNo) {
         if (!this.chunkInfo.containsKey(chunkNo)) return false;
-        return this.chunkInfo.get(chunkNo);
+        return this.chunkInfo.get(chunkNo) != -1;
     }
 
-    public void setAmStoringChunk(int chunkNo, boolean amStoring) {
+    public void setAmStoringChunk(int chunkNo, int seqNumber) {
         if (!this.chunkInfo.containsKey(chunkNo)) return;
-        this.chunkInfo.put(chunkNo, amStoring);
+        this.chunkInfo.put(chunkNo, seqNumber);
     }
 
     // initiator
@@ -60,7 +56,7 @@ public class FileInfo implements Serializable {
 
 
     // iteration
-    public Map<Integer, Boolean> getAllChunks() {
+    public Map<Integer, Integer> getAllChunks() {
         return this.chunkInfo;
     }
 

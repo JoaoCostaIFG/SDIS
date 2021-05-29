@@ -163,7 +163,6 @@ public class Peer implements TestInterface {
         }
     }
 
-
     public void cleanup() {
         if (closed) return;
         closed = true;
@@ -246,7 +245,7 @@ public class Peer implements TestInterface {
                 }
 
                 int destId = DigestFile.getId(c);
-                this.chordNode.send(new PutChunkMsg(fileId, 1, c, 3, this.address, this.port, destId));
+                this.chordNode.send(new PutChunkMsg(fileId, 1, c, 4, this.address, this.port, destId));
             } else if (cmd.equalsIgnoreCase("getc")) {
                 byte[] c = null;
                 String fileId = "";
@@ -429,12 +428,12 @@ public class Peer implements TestInterface {
 
             for (var chunkEntry : entry.getValue().getAllChunks().entrySet()) {
                 int chunkNo = chunkEntry.getKey();
-                boolean isStored = chunkEntry.getValue();
+                boolean isStored = chunkEntry.getValue() == -1;
                 if (isStored) {
                     // if we have the chunk stored => delete it && decrement perceived rep.
                     long chunkSize = DigestFile.deleteChunk(fileId, chunkNo); // updates state capacity
 //                    State.st.decrementChunkDeg(fileId, chunkNo, this.id);
-                    State.st.setAmStoringChunk(fileId, chunkNo, false);
+                    State.st.setAmStoringChunk(fileId, chunkNo, -1);
                     currentCap -= chunkSize;
 
 //                    RemovedMsg removedMsg = new RemovedMsg(this.id, fileId, chunkNo);
@@ -513,7 +512,7 @@ public class Peer implements TestInterface {
                 } else {
                     for (var chunkEntry : fileInfo.getAllChunks().entrySet()) {
                         int chunkId = chunkEntry.getKey();
-                        boolean isStored = chunkEntry.getValue();
+                        boolean isStored = chunkEntry.getValue() == -1;
                         if (!isStored)  // only show chunks we are currently storing
                             continue;
 
