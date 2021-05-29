@@ -370,7 +370,6 @@ public class SockThread implements Runnable {
         }
 
         // create SSLEngine
-        System.out.println(address.getHostAddress());
         SSLEngine engine = this.sslc.createSSLEngine(address.getHostAddress(), port);
         engine.setUseClientMode(true);
         // create buffers

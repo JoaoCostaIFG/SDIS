@@ -29,8 +29,8 @@ public class MessageHandler {
             State.st.addFileEntry(message.getFileId(), message.getReplication());
             State.st.declareChunk(message.getFileId(), message.getChunkNo());
 
-            // do not store duplicated chunks or if we surpass storage space
-            if (!State.st.amIStoringChunk(message.getFileId(), message.getChunkNo())) {
+            // do not store duplicated chunks or if we surpass storage space or if we are initiator
+            if (!State.st.amIStoringChunk(message.getFileId(), message.getChunkNo()) && !State.getState().isInitiator(message.getFileId())) {
                 if (State.st.updateStorageSize(message.getChunk().length)) {
                     try {
                         DigestFile.writeChunk(message.getFileId(), message.getChunkNo(),
@@ -165,7 +165,6 @@ public class MessageHandler {
 
     // TODO verify message came from the socket?
     public void handleMessage(Message message) {
-
 //        TODO i don't think we want this here, we want some message to loop through the ring. Handled by each message differently
 //        if (this.messageSentByUs(message)) {
 //            System.out.println("\t\tMessage looped through network " + message);

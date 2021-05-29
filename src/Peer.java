@@ -314,13 +314,9 @@ public class Peer implements TestInterface {
         }
 
         for (int i = 0; i < chunks.size(); ++i) {
-            // only backup chunks that don't have the desired replication degree
-//            if (State.st.isChunkOk(fileId, i)) continue;
-
-//            PutChunkMsg putChunkMsg = new PutChunkMsg(this.id,
-//                fileId, i, replicationDegree, chunks.get(i));
-//            PutChunkSender putChunkSender = new PutChunkSender(this.chordNode, putChunkMsg);
-//            putChunkSender.restart();
+            int destId = DigestFile.getId(chunks.get(i));
+            this.chordNode.send(new PutChunkMsg(fileId, i, chunks.get(i),
+                    replicationDegree, this.address, this.port, destId));
         }
 
         State.st.rmTask(task);
