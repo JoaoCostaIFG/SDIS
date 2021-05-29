@@ -38,15 +38,13 @@ public abstract class Message implements Serializable {
         this.sourcePort = sourcePort;
     }
 
-    public void addToPath(Integer id) {
-        this.path.add(id);
-    }
+    public abstract String getType();
+
+    /* GETTERS */
 
     public String getVersion() {
         return version;
     }
-
-    public abstract String getType();
 
     public String getFileId() {
         return fileId;
@@ -76,6 +74,11 @@ public abstract class Message implements Serializable {
         return destId;
     }
 
+    public boolean destAddrKnown() {
+        return destId == null; // we don't know the destination and we are trying to figure it out
+    }
+
+    /* SETTERS */
     public void setDest(InetAddress address, int port) {
         this.destAddress = address;
         this.destPort = port;
@@ -92,6 +95,10 @@ public abstract class Message implements Serializable {
 
     public void setDestId(Integer destId) {
         this.destId = destId;
+    }
+
+    public void addToPath(Integer id) {
+        this.path.add(id);
     }
 
     @Override

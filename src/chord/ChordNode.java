@@ -303,7 +303,7 @@ public class ChordNode implements ChordInterface, Observer {
         System.out.println("\tReceived: " + message);
         try {
             // Message is for us
-            if (message.getDestId() == null || // If destId of the message, the message was sent directly and without hops for us
+            if (message.destAddrKnown() || // the message was sent directly and without hops for us
                     ChordNode.inBetween(message.getDestId(), this.predecessor.getId(), this.id, false, true))
                 messageHandler.handleMessage(message);
             else // If message isn't for us {

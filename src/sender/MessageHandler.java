@@ -18,6 +18,11 @@ public class MessageHandler {
     }
 
     private void handleMsg(PutChunkMsg message) {
+        if (this.messageSentByUs(message) && message.destAddrKnown()) {
+            System.out.println("\t\tMessage looped through network " + message);
+            return; // We sent this message and it has looped through the network
+        }
+
         boolean iStoredTheChunk = false;
         synchronized (State.st) {
             // do not handle files we initiated the backup of TODO we don't want this
@@ -153,16 +158,18 @@ public class MessageHandler {
 
     private boolean messageSentByUs(Message message) {
         return (message.getSourcePort() == this.chordNode.getPort() &&
-                message.getSourceAddress().equals(this.chordNode.getAddress()));
+                message.getSourceAddress().equals(this.chordNode.getAddress()) &&
+                message.destAddrKnown());
     }
 
     // TODO verify message came from the socket?
     public void handleMessage(Message message) {
 
-        if (this.messageSentByUs(message)) {
-            System.out.println("\t\tMessage looped through network " + message);
-            return; // We sent this message and it has looped through the network TODO if getchunk say that it failed
-        }
+//        TODO i don't think we want this here, we want some message to loop through the ring. Handled by each message differently
+//        if (this.messageSentByUs(message)) {
+//            System.out.println("\t\tMessage looped through network " + message);
+//            return; // We sent this message and it has looped through the network TODO if getchunk say that it failed
+//        }
 
         if (PutChunkMsg.class.equals(message.getClass())) {
             handleMsg((PutChunkMsg) message);
