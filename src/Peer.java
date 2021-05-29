@@ -358,7 +358,6 @@ public class Peer implements TestInterface {
             CompletableFuture<byte[]> fut = new CompletableFuture<>();
             promisedChunks.add(fut);
             this.chordNode.addChunkFuture(fileId, currChunk, fut);
-            System.out.println(fileId + " " + currChunk + "--------");
 
             // Read chunk to get its id TODO Enhance this
             byte[] c = null;

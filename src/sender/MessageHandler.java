@@ -98,10 +98,8 @@ public class MessageHandler {
 
     private void handleMsg(ChunkMsg message) {
         Pair<String, Integer> msgChunk = new Pair<>(message.getFileId(), message.getChunkNo());
-        if (this.receivedChunks.containsKey(msgChunk)) {
-            System.out.println("STORED" + msgChunk);
+        if (this.receivedChunks.containsKey(msgChunk))
             this.receivedChunks.get(msgChunk).complete(message.getChunk());
-        }
     }
 
     private void handleMsg(DeleteMsg message) {
@@ -117,7 +115,6 @@ public class MessageHandler {
             System.out.println("\t\tMessage looped through network " + message);
             // Mark getchunk has unsuccessful
             var filePair = new Pair<>(message.getFileId(), message.getChunkNo());
-            System.out.println(message.getFileId() + " " + message.getChunkNo() + "--------");
             if (this.receivedChunks.containsKey(filePair))
                 this.receivedChunks.get(filePair).complete(null);
             return; // We sent this message and it has looped through the network
