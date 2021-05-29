@@ -132,7 +132,7 @@ public class SockThread implements Runnable {
                 hs != SSLEngineResult.HandshakeStatus.NOT_HANDSHAKING) {
             SSLEngineResult res;
             switch (hs) {
-                case NEED_UNWRAP -> {
+                case NEED_UNWRAP:
                     if (socketChannel.read(peerNetData) < 0) {
                         // end of stream => no more io
                         engine.closeInbound();
@@ -147,19 +147,19 @@ public class SockThread implements Runnable {
                     hs = res.getHandshakeStatus();
                     // check status
                     switch (res.getStatus()) {
-                        case OK -> {
+                        case OK:
                             // do nothing ?
-                        }
-                        case BUFFER_UNDERFLOW -> {
+                            break;
+                        case BUFFER_UNDERFLOW:
                             // bad packet, or the client maximum fragment size config does not work?
                             // we can increase the size
                             peerNetData = this.handleNetUnderflow(engine, peerNetData);
-                        }
-                        case BUFFER_OVERFLOW -> {
+                            break;
+                        case BUFFER_OVERFLOW:
                             // the client maximum fragment size config does not work?
                             peerAppData = this.enlargeAppBuffer(engine, peerAppData);
-                        }
-                        case CLOSED -> {
+                            break;
+                        case CLOSED:
                             if (engine.isOutboundDone()) {
                                 // the engine was closed but we still have handshake data to send => failed handshake
                                 return 1;
@@ -168,11 +168,12 @@ public class SockThread implements Runnable {
                                 engine.closeOutbound();
                                 hs = engine.getHandshakeStatus(); // collect new status
                             }
-                        }
-                        default -> throw new IllegalStateException("Unexpected value: " + res.getStatus());
+                            break;
+                        default:
+                            throw new IllegalStateException("Unexpected value: " + res.getStatus());
                     }
-                }
-                case NEED_WRAP -> {
+                    break;
+                case NEED_WRAP:
                     // ensure that any previous net data in myNetData has been sent to the peer
                     /*
                     while (myNetData.hasRemaining())
@@ -185,33 +186,34 @@ public class SockThread implements Runnable {
                     res = engine.wrap(myAppData, myNetData);
                     hs = res.getHandshakeStatus();
                     switch (res.getStatus()) {
-                        case OK -> {
+                        case OK:
                             myNetData.flip();
                             while (myNetData.hasRemaining())
                                 socketChannel.write(myNetData);
-                        }
-                        case BUFFER_OVERFLOW -> {
+                            break;
+                        case BUFFER_OVERFLOW:
                             // the client maximum fragment size config does not work?
                             // we can increase the size
                             myNetData = this.enlargeNetBuffer(engine, myNetData);
-                        }
-                        case BUFFER_UNDERFLOW -> {
+                            break;
+                        case BUFFER_UNDERFLOW:
                             throw new SSLException("Buffer underflow on wrap.");
-                        }
-                        case CLOSED -> {
+                        case CLOSED:
                             myNetData.flip();
                             while (myNetData.hasRemaining())
                                 socketChannel.write(myNetData);
                             peerNetData.clear();
-                        }
-                        default -> throw new IllegalStateException("Unexpected value: " + res.getStatus());
+                            break;
+                        default:
+                            throw new IllegalStateException("Unexpected value: " + res.getStatus());
                     }
-                }
-                case NEED_TASK -> {
+                    break;
+                case NEED_TASK:
                     runDelegatedTasks(engine);
                     hs = engine.getHandshakeStatus();
-                }
-                default -> throw new IllegalStateException("Unexpected value: " + hs);
+                    break;
+                default:
+                    throw new IllegalStateException("Unexpected value: " + hs);
             }
         }
 
@@ -296,6 +298,7 @@ public class SockThread implements Runnable {
                 }
             }
 
+            ByteArrayOutputStream messageContent = new ByteArrayOutputStream();
             if (n == -1) {
                 // end-of-stream
                 System.err.println("Got end of stream from peer. Attempting to close connection.");
@@ -313,26 +316,31 @@ public class SockThread implements Runnable {
                         break;
                     }
                     switch (res.getStatus()) {
-                        case OK -> {
-                            bufs[2].flip();
+                        case OK:
                             // flip it to create the message object bellow
-                        }
-                        case BUFFER_UNDERFLOW -> {
+                            bufs[2].flip();
+                            try {
+                                messageContent.write(bufs[2].array());
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                            break;
+                        case BUFFER_UNDERFLOW:
                             bufs[3] = this.handleNetUnderflow(engine, bufs[3]);
-                        }
-                        case BUFFER_OVERFLOW -> {
+                            break;
+                        case BUFFER_OVERFLOW:
                             bufs[2] = this.enlargeAppBuffer(engine, bufs[2]);
-                        }
-                        case CLOSED -> {
+                            break;
+                        case CLOSED:
                             this.closeSSLConnection(engine, socketChannel);
-                        }
+                            break;
                     }
                 }
             }
 
             this.closeSSLConnection(engine, socketChannel);
             // create message instance from the received bytes
-            ByteArrayInputStream bis = new ByteArrayInputStream(bufs[2].array());
+            ByteArrayInputStream bis = new ByteArrayInputStream(messageContent.toByteArray());
             Message msg;
             try {
                 ObjectInput in = new ObjectInputStream(bis);
@@ -384,16 +392,19 @@ public class SockThread implements Runnable {
         }
 
         // data to send
+        byte[] dataToSend;
         try (ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
             ObjectOutputStream outputStream = new ObjectOutputStream(bos);
             outputStream.writeObject(message);
             outputStream.flush();
-            bufs[0].put(bos.toByteArray());
-            bufs[0].flip();
+            dataToSend = bos.toByteArray();
         } catch (Exception e) {
             e.printStackTrace();
             return;
         }
+
+        bufs[0].put(dataToSend);
+        bufs[0].flip();
 
         // send loop
         while (bufs[0].hasRemaining()) {
@@ -404,8 +415,9 @@ public class SockThread implements Runnable {
                 e.printStackTrace();
                 return;
             }
+
             switch (res.getStatus()) {
-                case OK -> {
+                case OK:
                     bufs[1].flip();
                     // send TLS encoded data to peer
                     while (bufs[1].hasRemaining()) {
@@ -416,17 +428,16 @@ public class SockThread implements Runnable {
                             return;
                         }
                     }
-                }
-                case BUFFER_OVERFLOW -> {
+                    break;
+                case BUFFER_OVERFLOW:
                     bufs[1] = this.enlargeNetBuffer(engine, bufs[1]);
-                }
-                case BUFFER_UNDERFLOW -> {
+                    break;
+                case BUFFER_UNDERFLOW:
                     System.err.println("Buffer underflow that I don't understand.");
                     return;
-                }
-                case CLOSED -> {
+                case CLOSED:
                     this.closeSSLConnection(engine, socketChannel);
-                }
+                    break;
             }
         }
 
