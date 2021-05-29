@@ -54,6 +54,10 @@ public class FileInfo implements Serializable {
         this.desiredRep = desiredRep;
     }
 
+    public int getSeqNumber(int chunkNo) {
+        return this.chunkInfo.get(chunkNo);
+    }
+
 
     // iteration
     public Map<Integer, Integer> getAllChunks() {

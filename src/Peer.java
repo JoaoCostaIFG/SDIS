@@ -1,9 +1,7 @@
 import chord.ChordInterface;
 import chord.ChordNode;
 import file.DigestFile;
-import message.GetChunkMsg;
-import message.PutChunkMsg;
-import message.RemovedMsg;
+import message.*;
 import state.FileInfo;
 import state.State;
 
@@ -241,30 +239,6 @@ public class Peer implements TestInterface {
                     System.err.println("Failed to get response from node");
                     continue;
                 }
-            } else if (cmd.equalsIgnoreCase("putc")) {
-                byte[] c = null;
-                String fileId = "";
-                try {
-                    c = DigestFile.divideFileChunk(filePath, 1);
-                    fileId = DigestFile.getHash(filePath);
-                } catch (IOException e) {
-                    System.err.println(filePath + " not found");
-                }
-
-                int destId = DigestFile.getId(c);
-                this.chordNode.send(new PutChunkMsg(fileId, 1, c, 1, this.address, this.port, destId));
-            } else if (cmd.equalsIgnoreCase("getc")) {
-                byte[] c = null;
-                String fileId = "";
-                try {
-                    c = DigestFile.divideFileChunk(filePath, 1);
-                    fileId = DigestFile.getHash(filePath);
-                } catch (IOException e) {
-                    System.err.println(filePath + " not found");
-                }
-
-                int destId = DigestFile.getId(c);
-                this.chordNode.send(new GetChunkMsg(fileId, 1, this.address, this.port, destId));
             } else if (cmd.startsWith("st")) {
                 System.out.println(this.chordNode);
             } else if (cmd.startsWith("backup")) {
@@ -286,6 +260,12 @@ public class Peer implements TestInterface {
             } else if (cmd.equalsIgnoreCase("restore")) {
                 try {
                     System.out.println(this.restore(filePath));
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
+            } else if (cmd.equalsIgnoreCase("delete")) {
+                try {
+                    System.out.println(this.delete(filePath));
                 } catch (RemoteException e) {
                     e.printStackTrace();
                 }
@@ -408,10 +388,7 @@ public class Peer implements TestInterface {
     public String deleteFromId(String fileId) {
         // we don't want the old entry anymore
         State.st.removeFileEntry(fileId);
-
-//        DeleteMsg msg = new DeleteMsg(this.id, fileId);
-//        this.MCSock.send(msg);
-
+        this.chordNode.send(new DeleteMsg(fileId, this.chordNode.getAddress(), this.chordNode.getPort(), this.chordNode.getId()));
         return "Success";
     }
 

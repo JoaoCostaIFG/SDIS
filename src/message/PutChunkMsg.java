@@ -12,7 +12,6 @@ public class PutChunkMsg extends Message {
     public PutChunkMsg(String fileId,
                        int chunkNo, byte[] chunk, int replication, InetAddress sourceDest, int sourcePort, Integer destId) {
         super(fileId, sourceDest, sourcePort, destId);
-        this.fileId = fileId;
         this.chunkNo = chunkNo;
         this.replication = replication;
         this.chunk = chunk;

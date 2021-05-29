@@ -281,10 +281,9 @@ public class ChordNode implements ChordInterface, Observer {
     public boolean messageIsForUs(Message message) throws RemoteException {
         return message.destAddrKnown() || // the message was sent directly and without hops for us
                 ChordNode.inBetween(message.getDestId(), this.predecessor.getId(), this.id, false, true);
-
     }
 
-    public void sendToNode(Message message) {
+    private void sendToNode(Message message) {
         ChordInterface nextHopDest = null;
         try {
             nextHopDest = closestPrecedingFinger(message.getDestId());
@@ -339,7 +338,6 @@ public class ChordNode implements ChordInterface, Observer {
             System.err.println("Couldn't figure out if message " + message + " is for me or not");
         }
     }
-
 
     public void addChunkFuture(String fileId, int currChunk, CompletableFuture<byte[]> fut) {
         this.messageHandler.addChunkFuture(fileId, currChunk, fut);

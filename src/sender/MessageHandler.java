@@ -3,6 +3,7 @@ package sender;
 import chord.ChordNode;
 import file.DigestFile;
 import message.*;
+import state.FileInfo;
 import state.State;
 import utils.Pair;
 
@@ -106,11 +107,24 @@ public class MessageHandler {
     }
 
     private void handleMsg(DeleteMsg message) {
+        if (this.messageSentByUs(message) && message.destAddrKnown()) {
+            System.out.println("\t\tMessage looped through network " + message);
+            return; // We sent this message and it has looped through the network
+        }
+
         synchronized (State.st) {
-            // delete the file on the file system
-            // also updates state entry and space filled
             DigestFile.deleteFile(message.getFileId());
         }
+
+        try {
+            message.setDest(chordNode.getSuccessor());
+        } catch (RemoteException e) {
+            e.printStackTrace();
+        }
+
+        // We don't need the chord ring to hop to the dest, we just need to hop it to next successor successively
+        message.setDestId(null);
+        this.sock.send(message);
     }
 
     private void handleMsg(GetChunkMsg message) {

@@ -1,16 +1,12 @@
 package message;
 
+import java.net.InetAddress;
+
 public class DeleteMsg extends Message {
     public static final String type = "DELETE";
-    private final String fileId;
 
-    public DeleteMsg(String fileId) {
-        super(fileId);
-        this.fileId = fileId;
-    }
-
-    public String getFileId() {
-        return fileId;
+    public DeleteMsg(String fileId, InetAddress sourceDest, int sourcePort, int destId) {
+        super(fileId, sourceDest, sourcePort, destId);
     }
 
     @Override
@@ -20,6 +16,6 @@ public class DeleteMsg extends Message {
 
     @Override
     public String toString() {
-        return type + " " + this.fileId + " from " + super.id;
+        return super.toString();
     }
 }
