@@ -13,6 +13,7 @@ import java.rmi.registry.Registry;
 import java.rmi.server.UnicastRemoteObject;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.concurrent.CompletableFuture;
 
 import static java.lang.Math.pow;
 
@@ -299,7 +300,7 @@ public class ChordNode implements ChordInterface, Observer {
     }
 
     @Override
-    public void notify(Message message) {
+    public void handle(Message message) {
         System.out.print("\tReceived: " + message + " - ");
         try {
             // Message is for us
@@ -315,5 +316,9 @@ public class ChordNode implements ChordInterface, Observer {
         } catch (RemoteException e) {
             System.err.println("Couldn't figure out if message " + message + " is for me or not");
         }
+    }
+
+    public void addChunkFuture(String fileId, int currChunk, CompletableFuture<byte[]> fut) {
+        this.messageHandler.addChunkFuture(fileId, currChunk, fut);
     }
 }

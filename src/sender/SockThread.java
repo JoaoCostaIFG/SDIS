@@ -345,7 +345,7 @@ public class SockThread implements Runnable {
             // handle message
             this.threadPool.execute(
                     () -> {
-                        this.observer.notify(msg);
+                        this.observer.handle(msg);
                     });
         }
     }

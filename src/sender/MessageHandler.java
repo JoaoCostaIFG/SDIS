@@ -4,17 +4,27 @@ import chord.ChordNode;
 import file.DigestFile;
 import message.*;
 import state.State;
+import utils.Pair;
 
 import java.io.IOException;
 import java.rmi.RemoteException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 public class MessageHandler {
     private final SockThread sock;
     private final ChordNode chordNode;
+    private final ConcurrentMap<Pair<String, Integer>, CompletableFuture<byte[]>> receivedChunks;
 
     public MessageHandler(SockThread sock, ChordNode chordNode) {
         this.sock = sock;
         this.chordNode = chordNode;
+        this.receivedChunks = new ConcurrentHashMap<>();
+    }
+
+    public void addChunkFuture(String fileId, int currChunk, CompletableFuture<byte[]> fut) {
+        this.receivedChunks.put(new Pair<>(fileId, currChunk), fut);
     }
 
     private void handleMsg(PutChunkMsg message) {
@@ -28,27 +38,28 @@ public class MessageHandler {
             // always register the existence of this file
             State.st.addFileEntry(message.getFileId(), message.getReplication());
             State.st.declareChunk(message.getFileId(), message.getChunkNo());
+            if(!State.st.isInitiator(message.getFileId())) { // if we arent initiator
+                 // do not store duplicated chunks or if we surpass storage space or
+                 if (!State.st.amIStoringChunk(message.getFileId(), message.getChunkNo())) {
+                     if (State.st.updateStorageSize(message.getChunk().length)) {
+                         try {
+                             DigestFile.writeChunk(message.getFileId(), message.getChunkNo(),
+                                     message.getChunk(), message.getChunk().length);
+                         } catch (IOException e) {
+                             e.printStackTrace();
+                             State.st.updateStorageSize(-message.getChunk().length);
+                         }
 
-            // do not store duplicated chunks or if we surpass storage space or if we are initiator
-            if (!State.st.amIStoringChunk(message.getFileId(), message.getChunkNo()) && !State.getState().isInitiator(message.getFileId())) {
-                if (State.st.updateStorageSize(message.getChunk().length)) {
-                    try {
-                        DigestFile.writeChunk(message.getFileId(), message.getChunkNo(),
-                                message.getChunk(), message.getChunk().length);
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                        State.st.updateStorageSize(-message.getChunk().length);
-                    }
-
-                    // Add sequence number
-                    State.st.setAmStoringChunk(message.getFileId(), message.getChunkNo(), message.getSeqNumber());
-                    iStoredTheChunk = true;
-                }
-            } else {
-                // Update sequence number
-                State.st.setAmStoringChunk(message.getFileId(), message.getChunkNo(), message.getSeqNumber());
-                iStoredTheChunk = true;
-            }
+                         // Add sequence number
+                         State.st.setAmStoringChunk(message.getFileId(), message.getChunkNo(), message.getSeqNumber());
+                         iStoredTheChunk = true;
+                     }
+                 } else {
+                     // Update sequence number
+                     State.st.setAmStoringChunk(message.getFileId(), message.getChunkNo(), message.getSeqNumber());
+                     iStoredTheChunk = true;
+                 }
+             }
         }
 
         // I am responsible and i stored the message
@@ -85,6 +96,14 @@ public class MessageHandler {
         }
     }
 
+    private void handleMsg(ChunkMsg message) {
+        Pair<String, Integer> msgChunk = new Pair<>(message.getFileId(), message.getChunkNo());
+        if (this.receivedChunks.containsKey(msgChunk)) {
+            System.out.println("STORED" + msgChunk);
+            this.receivedChunks.get(msgChunk).complete(message.getChunk());
+        }
+    }
+
     private void handleMsg(DeleteMsg message) {
         synchronized (State.st) {
             // delete the file on the file system
@@ -96,6 +115,11 @@ public class MessageHandler {
     private void handleMsg(GetChunkMsg message) {
         if (this.messageSentByUs(message) && message.destAddrKnown()) {
             System.out.println("\t\tMessage looped through network " + message);
+            // Mark getchunk has unsuccessful
+            var filePair = new Pair<>(message.getFileId(), message.getChunkNo());
+            System.out.println(message.getFileId() + " " + message.getChunkNo() + "--------");
+            if (this.receivedChunks.containsKey(filePair))
+                this.receivedChunks.get(filePair).complete(null);
             return; // We sent this message and it has looped through the network
         }
 
@@ -179,7 +203,8 @@ public class MessageHandler {
             handleMsg((DeleteMsg) message);
         } else if (GetChunkMsg.class.equals(message.getClass())) {
             handleMsg((GetChunkMsg) message);
-        } else if (ChunkMsg.class.equals(message.getClass())) { // skoiop
+        } else if (ChunkMsg.class.equals(message.getClass())) {
+            handleMsg((ChunkMsg) message);
         } else if (RemovedMsg.class.equals(message.getClass())) {
             handleMsg((RemovedMsg) message);
         }
