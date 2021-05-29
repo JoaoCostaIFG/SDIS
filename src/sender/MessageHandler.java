@@ -25,9 +25,6 @@ public class MessageHandler {
 
         boolean iStoredTheChunk = false;
         synchronized (State.st) {
-            // do not handle files we initiated the backup of TODO we don't want this
-            // if (State.st.isInitiator(message.getFileId())) return;
-
             // always register the existence of this file
             State.st.addFileEntry(message.getFileId(), message.getReplication());
             State.st.declareChunk(message.getFileId(), message.getChunkNo());
@@ -82,9 +79,7 @@ public class MessageHandler {
         this.sock.send(message);
     }
 
-
     private void handleMsg(StoredMsg message) {
-        System.err.println("Got stored");
         synchronized (State.st) {
             // State.st.incrementChunkDeg(message.getFileId(), message.getChunkNo(), message.getSenderId());
         }
@@ -99,16 +94,22 @@ public class MessageHandler {
     }
 
     private void handleMsg(GetChunkMsg message) {
+        if (this.messageSentByUs(message) && message.destAddrKnown()) {
+            System.out.println("\t\tMessage looped through network " + message);
+            return; // We sent this message and it has looped through the network
+        }
+
         synchronized (State.st) {
-            System.err.println(message.getFileId() + "---------------");
-            if (!State.st.amIStoringChunk(message.getFileId(), message.getChunkNo())) { // Resend to next chord in ring
+            if (!State.st.amIStoringChunk(message.getFileId(), message.getChunkNo())) {
+                // Resend to next node in ring
                 try {
                     message.setDest(chordNode.getSuccessor());
                 } catch (RemoteException e) {
                     e.printStackTrace();
                 }
-                message.setDestId(null); // We don't need the chord ring to hop to the dest, we already know it
-                // message.setSource(chordNode); TODO do we want this
+
+                // We don't need the chord ring to hop to the dest, we just need to hop it to next successor successively
+                message.setDestId(null);
                 this.sock.send(message);
                 return;
             }

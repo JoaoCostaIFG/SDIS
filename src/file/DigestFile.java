@@ -66,8 +66,7 @@ public class DigestFile {
 
     /* get the hash that identifies a given file */
     public static String getHash(String filename) throws IOException {
-        String filePath = PEER_DIR + filename;
-        String bitString = getBitString(Paths.get(filePath));
+        String bitString = getBitString(Paths.get(filename));
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             final byte[] bytes = digest.digest(bitString.getBytes(StandardCharsets.US_ASCII));
@@ -101,7 +100,7 @@ public class DigestFile {
 
     /* returns the number of chunks used to store a given file. -1 if the file is too big */
     public static int getChunkCount(String filename) throws IOException {
-        Path filePath = Paths.get(PEER_DIR + filename);
+        Path filePath = Paths.get(filename);
         if (surpassesMaxChunks(filePath)) return -1;
         return (int) ((Files.size(filePath) / MAX_CHUNK_SIZE) + 1);
     }
@@ -196,7 +195,7 @@ public class DigestFile {
 
     /* divide a file into chunks */
     public static List<byte[]> divideFile(String filename, int replicationDegree) throws IOException {
-        Path filePath = Paths.get(PEER_DIR + filename);
+        Path filePath = Paths.get(filename);
         if (surpassesMaxChunks(filePath))
             throw new IOException("File is too big (mas não te vou alocar).");
 
@@ -234,7 +233,7 @@ public class DigestFile {
     }
 
     public static byte[] divideFileChunk(String filename, int chunkNo) throws IOException {
-        Path filePath = Paths.get(PEER_DIR + filename);
+        Path filePath = Paths.get(filename);
         if (surpassesMaxChunks(filePath))
             throw new IOException("File is too big (mas não te vou alocar).");
 

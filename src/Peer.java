@@ -204,7 +204,7 @@ public class Peer implements TestInterface {
         do {
             cmd = scanner.nextLine();
             System.out.println("CMD: " + cmd);
-            String filePath = "../../test_files/1b.txt";
+            String filePath = "../test_files/filename.txt";
             if (cmd.startsWith("join")) {
                 String[] opts = cmd.split(" ");
                 if (opts.length != 3) {
@@ -245,7 +245,7 @@ public class Peer implements TestInterface {
                 }
 
                 int destId = DigestFile.getId(c);
-                this.chordNode.send(new PutChunkMsg(fileId, 1, c, 4, this.address, this.port, destId));
+                this.chordNode.send(new PutChunkMsg(fileId, 1, c, 1, this.address, this.port, destId));
             } else if (cmd.equalsIgnoreCase("getc")) {
                 byte[] c = null;
                 String fileId = "";

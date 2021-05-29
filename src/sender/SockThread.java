@@ -233,7 +233,7 @@ public class SockThread implements Runnable {
         }
 
         try {
-            socketChannel.close();
+            socketChannel.close(); // :(
         } catch (IOException ignored) {
         }
     }
@@ -331,7 +331,6 @@ public class SockThread implements Runnable {
             }
 
             this.closeSSLConnection(engine, socketChannel);
-
             // create message instance from the received bytes
             ByteArrayInputStream bis = new ByteArrayInputStream(bufs[2].array());
             Message msg;
@@ -344,24 +343,15 @@ public class SockThread implements Runnable {
                 continue;
             }
             // handle message
-            System.err.println(msg.getDestAddress());
             this.threadPool.execute(
                     () -> {
                         this.observer.notify(msg);
                     });
-
-            //try {
-                // socket.close(); TODO O que fazer aqui
-                System.err.println("Supposed to close socket here");
-            //} catch (IOException e) {
-                //System.err.println("Couldn't close socket");
-            //}
         }
-
     }
 
     public void send(Message message) {
-        System.out.println("Sent: " + message);
+        System.out.println("Sent: " + message + "\n");
 
         InetAddress address = message.getDestAddress();
         int port = message.getDestPort();

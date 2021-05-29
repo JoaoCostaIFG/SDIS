@@ -300,14 +300,18 @@ public class ChordNode implements ChordInterface, Observer {
 
     @Override
     public void notify(Message message) {
-        System.out.println("\tReceived: " + message);
+        System.out.print("\tReceived: " + message + " - ");
         try {
             // Message is for us
             if (message.destAddrKnown() || // the message was sent directly and without hops for us
-                    ChordNode.inBetween(message.getDestId(), this.predecessor.getId(), this.id, false, true))
+                    ChordNode.inBetween(message.getDestId(), this.predecessor.getId(), this.id, false, true)) {
+                System.out.println("Handling\n");
                 messageHandler.handleMessage(message);
-            else // If message isn't for us {
+            }
+            else { // message isn't for us
+                System.out.println("Resending\n");
                 this.send(message); // resend it through the chord ring
+            }
         } catch (RemoteException e) {
             System.err.println("Couldn't figure out if message " + message + " is for me or not");
         }
