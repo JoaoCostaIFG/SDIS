@@ -9,14 +9,19 @@ import state.State;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.rmi.NotBoundException;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.rmi.server.UnicastRemoteObject;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 
@@ -246,7 +251,7 @@ public class Peer implements TestInterface {
                 }
 
                 int destId = DigestFile.getId(c);
-                this.chordNode.send(new PutChunkMsg(fileId, 1, c, 1, this.address, this.port, destId));
+                this.chordNode.handle(new PutChunkMsg(fileId, 1, c, 1, this.address, this.port, destId));
             } else if (cmd.equalsIgnoreCase("getc")) {
                 byte[] c = null;
                 String fileId = "";
@@ -258,7 +263,7 @@ public class Peer implements TestInterface {
                 }
 
                 int destId = DigestFile.getId(c);
-                this.chordNode.send(new GetChunkMsg(fileId, 1, this.address, this.port, destId));
+                this.chordNode.handle(new GetChunkMsg(fileId, 1, this.address, this.port, destId));
             } else if (cmd.startsWith("st")) {
                 System.out.println(this.chordNode);
             } else if (cmd.equalsIgnoreCase("backup")) {
@@ -275,6 +280,7 @@ public class Peer implements TestInterface {
                 }
             } else if (cmd.equalsIgnoreCase("restore")) {
                 try {
+                    System.out.println("?");
                     System.out.println(this.restore(filePath));
                 } catch (RemoteException e) {
                     e.printStackTrace();
@@ -316,7 +322,7 @@ public class Peer implements TestInterface {
 
         for (int i = 0; i < chunks.size(); ++i) {
             int destId = DigestFile.getId(chunks.get(i));
-            this.chordNode.send(new PutChunkMsg(fileId, i, chunks.get(i),
+            this.chordNode.handle(new PutChunkMsg(fileId, i, chunks.get(i),
                     replicationDegree, this.address, this.port, destId));
         }
 
@@ -347,48 +353,52 @@ public class Peer implements TestInterface {
 
         // Storing the futures to be able to restore the file after getting all the chunks (or failing
         // if a chunk is missing)
-//        List<Pair<Future<?>, MessageSender<? extends Message>>> senders = new ArrayList<>();
-//        for (int currChunk = 0; currChunk < chunkNo; ++currChunk) {
-//            GetChunkMsg msg = new GetChunkMsg(this.id, fileId, currChunk);
-//            MessageSender<? extends Message> chunkSender;
-//            chunkSender = new GetChunkSender(this.chordNode, msg);
-//            senders.add(new Pair<>(this.testAppThreadPool.submit(chunkSender), chunkSender));
-        //}
+        List<CompletableFuture<byte[]>> promisedChunks = new ArrayList<>();
+        for (int currChunk = 0; currChunk < chunkNo; ++currChunk) {
+            // Add future to node so that it notifies it
+            CompletableFuture<byte[]> fut = new CompletableFuture<>();
+            promisedChunks.add(fut);
+            this.chordNode.addChunkFuture(fileId, currChunk, fut);
 
-//        List<byte[]> chunks = new ArrayList<>(chunkNo);
-//        for (var sender : senders) {
-//            try {
-//                sender.p1.get();
-//            } catch (InterruptedException | ExecutionException e) {
-//                State.st.rmTask(task);
-//                throw new RemoteException("There was an error recovering a chunk of the file.");
-//            }
-//            int chunkNumber;
-//            byte[] chunk;
-//            GetChunkSender getChunkSender = (GetChunkSender) sender.p2;
-//            chunkNumber = getChunkSender.getMessage().getChunkNo();
-//
-//            if (!sender.p2.getSuccess()) {
-//                State.st.rmTask(task);
-//                throw new RemoteException("Failed to restore the file " + filePath +
-//                        " because of a missing chunk: " + chunkNumber);
-//            }
-//
-//            chunk = getChunkSender.getResponse();
-//            chunks.add(chunk);
-//        }
-//
-//        Path path = Paths.get(filePath);
-//        try {
-//            DigestFile.assembleFile(path.getFileName().toString(), chunks);
-//        } catch (IOException e) {
-//            State.st.rmTask(task);
-//            throw new RemoteException("Failed to write restored file: " + path.getFileName().toString());
-//        }
-//
-//        State.st.rmTask(task);
-//        return "Restored file " + filePath + " with hash " + fileId + ".";
-        return "TODO";
+            // Read chunk to get its id TODO Enhance this
+            byte[] c = null;
+            try {
+                c = DigestFile.divideFileChunk(filePath, 1);
+                fileId = DigestFile.getHash(filePath);
+            } catch (IOException e) {
+                System.err.println(filePath + " not found");
+            }
+            // Send getchunk message
+            int destId = DigestFile.getId(c);
+            this.chordNode.handle(new GetChunkMsg(fileId, currChunk, this.address, this.port, destId));
+        }
+
+        List<byte[]> chunks = new ArrayList<>(chunkNo);
+        for (int currChunk = 0; currChunk < chunkNo; ++currChunk) {
+            CompletableFuture<byte[]> fut = promisedChunks.get(currChunk);
+            try {
+                byte[] chunk = fut.get();
+                if (chunk == null) { // Getchunk passed through everyone and didn't work
+                    State.st.rmTask(task);
+                    throw new RemoteException("Couldn't get chunk " + currChunk);
+                }
+                chunks.add(chunk);
+            } catch (InterruptedException | ExecutionException e) {
+                State.st.rmTask(task);
+                throw new RemoteException("Couldn't get chunk " + currChunk);
+            }
+        }
+
+        Path path = Paths.get(filePath);
+        try {
+            DigestFile.assembleFile(path.getFileName().toString(), chunks);
+        } catch (IOException e) {
+            State.st.rmTask(task);
+            throw new RemoteException("Failed to write restored file: " + path.getFileName().toString());
+        }
+
+        State.st.rmTask(task);
+        return "Restored file " + filePath + " with hash " + fileId + ".";
     }
 
     public String deleteFromId(String fileId) {
