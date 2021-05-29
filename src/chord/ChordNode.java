@@ -278,7 +278,13 @@ public class ChordNode implements ChordInterface, Observer {
         this.sock.interrupt();
     }
 
-    public void send(Message message) {
+    public boolean messageIsForUs(Message message) throws RemoteException {
+        return message.destAddrKnown() || // the message was sent directly and without hops for us
+                ChordNode.inBetween(message.getDestId(), this.predecessor.getId(), this.id, false, true);
+
+    }
+
+    public void sendToNode(Message message) {
         ChordInterface nextHopDest = null;
         try {
             nextHopDest = closestPrecedingFinger(message.getDestId());
@@ -296,6 +302,7 @@ public class ChordNode implements ChordInterface, Observer {
             System.err.println("Could connect to chosen next hop dest : TODO Max tries with timeout " + message);
             e.printStackTrace();
         }
+
         this.sock.send(message);
     }
 
@@ -304,19 +311,35 @@ public class ChordNode implements ChordInterface, Observer {
         System.out.print("\tReceived: " + message + " - ");
         try {
             // Message is for us
-            if (message.destAddrKnown() || // the message was sent directly and without hops for us
-                    ChordNode.inBetween(message.getDestId(), this.predecessor.getId(), this.id, false, true)) {
+            if (this.messageIsForUs(message)) {
                 System.out.println("Handling\n");
                 messageHandler.handleMessage(message);
             }
             else { // message isn't for us
                 System.out.println("Resending\n");
-                this.send(message); // resend it through the chord ring
+                this.sendToNode(message); // resend it through the chord ring
             }
         } catch (RemoteException e) {
             System.err.println("Couldn't figure out if message " + message + " is for me or not");
         }
     }
+
+    public void send(Message message) {
+        try {
+            // Message is for us
+            if (this.messageIsForUs(message)) {
+                System.out.println("\tNot sending message (its for me): " + message + "\n");
+                messageHandler.handleMessage(message);
+            }
+            else { // message isn't for us
+                System.out.println("Sending: " + message + "\n");
+                this.sendToNode(message); // resend it through the chord ring
+            }
+        } catch (RemoteException e) {
+            System.err.println("Couldn't figure out if message " + message + " is for me or not");
+        }
+    }
+
 
     public void addChunkFuture(String fileId, int currChunk, CompletableFuture<byte[]> fut) {
         this.messageHandler.addChunkFuture(fileId, currChunk, fut);

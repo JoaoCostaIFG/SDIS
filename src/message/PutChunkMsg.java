@@ -19,6 +19,15 @@ public class PutChunkMsg extends Message {
         this.seqNumber = replication;
     }
 
+    public PutChunkMsg(String fileId, Integer chunkNo, byte[] chunk, int replication, int destId) {
+        super(fileId, null, -1, destId);
+        this.fileId = fileId;
+        this.chunkNo = chunkNo;
+        this.replication = replication;
+        this.chunk = chunk;
+        this.seqNumber = replication;
+    }
+
     public void decreaseCurrentRep() {
         --this.seqNumber;
     }
@@ -41,6 +50,10 @@ public class PutChunkMsg extends Message {
 
     public int getReplication() {
         return replication;
+    }
+
+    public boolean hasNoSource() {
+        return this.getSourcePort() == -1 && this.getSourceAddress() == null;
     }
 
     @Override

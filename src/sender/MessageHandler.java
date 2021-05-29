@@ -28,6 +28,9 @@ public class MessageHandler {
     }
 
     private void handleMsg(PutChunkMsg message) {
+        if (message.hasNoSource()) // We are responsible for this message, mark as responsible
+            message.setSource(this.chordNode);
+
         if (this.messageSentByUs(message) && message.destAddrKnown()) {
             System.out.println("\t\tMessage looped through network " + message);
             return; // We sent this message and it has looped through the network
@@ -144,38 +147,48 @@ public class MessageHandler {
     }
 
     private void handleMsg(RemovedMsg message) {
-        int repDegree;
-        boolean amInitiator;
-//        synchronized (State.st) {
-//            State.st.decrementChunkDeg(message.getFileId(), message.getChunkNo(), message.getSenderId());
-//            if (State.st.isChunkOk(message.getFileId(), message.getChunkNo()))
-//                return;
-//            // we can only serve a chunk if:
-//            // we are storing it or we are the initiator
-//            amInitiator = State.st.isInitiator(message.getFileId());
-//            if (!amInitiator && !State.st.amIStoringChunk(message.getFileId(), message.getChunkNo()))
-//                return;
-//            repDegree = State.st.getFileDeg(message.getFileId());
-//        }
+        if (this.messageSentByUs(message) && message.destAddrKnown()) {
+            System.out.println("\t\tMessage looped through network " + message);
+            return; // We sent this message and it has looped through the network
+        }
 
-//        try {
-//            byte[] chunk;
-//            if (amInitiator) {
-//                chunk = DigestFile.divideFileChunk(State.st.getFileInfo(message.getFileId()).getFilePath(),
-//                        message.getChunkNo());
-//            } else {
-//                chunk = DigestFile.readChunk(message.getFileId(), message.getChunkNo());
-//            }
+        boolean isStoringChunk, isInitiator;
+        int replication = -1;
+        String filePath = "";
+        synchronized (State.st) {
+            isStoringChunk = State.st.amIStoringChunk(message.getFileId(), message.getChunkNo());
+            isInitiator = State.st.isInitiator(message.getFileId());
+            if (isInitiator || isStoringChunk) replication = State.st.getFileInfo(message.getFileId()).getDesiredRep();
+            if (isInitiator) filePath = State.st.getFileInfo(message.getFileId()).getFilePath();
+        }
+        if (isInitiator || isStoringChunk) { // If we have the file that got deleted
+            // Initiate backup protocol again
+            byte[] c;
+            try {
+                if (isStoringChunk) {
+                    c = DigestFile.readChunk(message.getFileId(), message.getChunkNo());
+                } else {
+                    c = DigestFile.divideFileChunk(filePath, message.getChunkNo());
+                }
+            } catch (IOException e) {
+                System.out.println("couldn't read supposed store chunk " + message.getFileId() + " " + message.getChunkNo());
+                return;
+            }
 
-//            PutChunkMsg putChunkMsg = new PutChunkMsg(this.protocolVersion, this.selfID,
-//                    message.getFileId(), message.getChunkNo(), repDegree, chunk);
-//            RemovedPutchunkSender removedPutchunkSender = new RemovedPutchunkSender(this.MDBSock, putChunkMsg,
-//                    this);
-//            removedPutchunkSender.run();
-//        } catch (Exception e) {
-//            e.printStackTrace();
-//            System.err.println("Failed constructing reply for " + message.getType());
-//        }
+            // We don't give the source so that the responsible node for this chunk fills it when it receives the msg
+            this.chordNode.send(new PutChunkMsg(message.getFileId(), message.getChunkNo(), c, replication, DigestFile.getId(c)));
+        } else {
+            // Resend to next node in ring
+            try {
+                message.setDest(chordNode.getSuccessor());
+            } catch (RemoteException e) {
+                e.printStackTrace();
+            }
+
+            // We don't need the chord ring to hop to the dest, we just need to hop it to next successor successively
+            message.setDestId(null);
+            this.sock.send(message);
+        }
     }
 
     private boolean messageSentByUs(Message message) {
@@ -184,12 +197,11 @@ public class MessageHandler {
                 message.destAddrKnown());
     }
 
-    // TODO verify message came from the socket?
     public void handleMessage(Message message) {
 //        TODO i don't think we want this here, we want some message to loop through the ring. Handled by each message differently
 //        if (this.messageSentByUs(message)) {
 //            System.out.println("\t\tMessage looped through network " + message);
-//            return; // We sent this message and it has looped through the network TODO if getchunk say that it failed
+//            return; // We sent this message and it has looped through the network
 //        }
 
         if (PutChunkMsg.class.equals(message.getClass())) {

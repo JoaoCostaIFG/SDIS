@@ -3,6 +3,7 @@ import chord.ChordNode;
 import file.DigestFile;
 import message.GetChunkMsg;
 import message.PutChunkMsg;
+import message.RemovedMsg;
 import state.FileInfo;
 import state.State;
 
@@ -250,7 +251,7 @@ public class Peer implements TestInterface {
                 }
 
                 int destId = DigestFile.getId(c);
-                this.chordNode.handle(new PutChunkMsg(fileId, 1, c, 1, this.address, this.port, destId));
+                this.chordNode.send(new PutChunkMsg(fileId, 1, c, 1, this.address, this.port, destId));
             } else if (cmd.equalsIgnoreCase("getc")) {
                 byte[] c = null;
                 String fileId = "";
@@ -262,24 +263,27 @@ public class Peer implements TestInterface {
                 }
 
                 int destId = DigestFile.getId(c);
-                this.chordNode.handle(new GetChunkMsg(fileId, 1, this.address, this.port, destId));
+                this.chordNode.send(new GetChunkMsg(fileId, 1, this.address, this.port, destId));
             } else if (cmd.startsWith("st")) {
                 System.out.println(this.chordNode);
-            } else if (cmd.equalsIgnoreCase("backup")) {
+            } else if (cmd.startsWith("backup")) {
+                String[] opts = cmd.split(" ");
+                if (opts.length != 2) { System.out.println("Usage: backup repdegree"); continue; }
                 try {
-                    this.backup(filePath, 1);
+                    this.backup(filePath, Integer.parseInt(opts[1]));
                 } catch (RemoteException e) {
                     e.printStackTrace();
                 }
-            } else if (cmd.equalsIgnoreCase("reclaim")) {
+            } else if (cmd.startsWith("reclaim")) {
+                String[] opts = cmd.split(" ");
+                if (opts.length != 2) { System.out.println("Usage: reclaim size"); continue; }
                 try {
-                    this.reclaim(0);
+                    this.reclaim(Integer.parseInt(opts[1]));
                 } catch (RemoteException e) {
                     e.printStackTrace();
                 }
             } else if (cmd.equalsIgnoreCase("restore")) {
                 try {
-                    System.out.println("?");
                     System.out.println(this.restore(filePath));
                 } catch (RemoteException e) {
                     e.printStackTrace();
@@ -321,7 +325,7 @@ public class Peer implements TestInterface {
 
         for (int i = 0; i < chunks.size(); ++i) {
             int destId = DigestFile.getId(chunks.get(i));
-            this.chordNode.handle(new PutChunkMsg(fileId, i, chunks.get(i),
+            this.chordNode.send(new PutChunkMsg(fileId, i, chunks.get(i),
                     replicationDegree, this.address, this.port, destId));
         }
 
@@ -369,7 +373,7 @@ public class Peer implements TestInterface {
             }
             // Send getchunk message
             int destId = DigestFile.getId(c);
-            this.chordNode.handle(new GetChunkMsg(fileId, currChunk, this.address, this.port, destId));
+            this.chordNode.send(new GetChunkMsg(fileId, currChunk, this.address, this.port, destId));
         }
 
         List<byte[]> chunks = new ArrayList<>(chunkNo);
@@ -423,27 +427,30 @@ public class Peer implements TestInterface {
 
     // force == true => ignore if the the replication degree becomes 0
     // returns capacity left to trim
-    private long trimFiles(long capactityToTrim, boolean force) {
+    private long trimFiles(long capactityToTrim, boolean force) throws RemoteException {
         if (capactityToTrim <= 0) return 0;
 
         long currentCap = capactityToTrim;
 
         for (var entry : State.st.getAllFilesInfo().entrySet()) {
             String fileId = entry.getKey();
-            // int desiredRep = entry.getValue().p1;
-
             for (var chunkEntry : entry.getValue().getAllChunks().entrySet()) {
                 int chunkNo = chunkEntry.getKey();
-                boolean isStored = chunkEntry.getValue() == -1;
+                boolean isStored = chunkEntry.getValue() != -1;
                 if (isStored) {
                     // if we have the chunk stored => delete it && decrement perceived rep.
+                    byte[] chunk;
+                    int chunkId;
+                    try {
+                        chunk = DigestFile.readChunk(fileId, chunkNo);
+                        chunkId = DigestFile.getId(chunk);
+                    } catch (IOException e) {
+                        throw new RemoteException("Couldn't find supposed stored chunk " + fileId + " " + chunkNo);
+                    }
                     long chunkSize = DigestFile.deleteChunk(fileId, chunkNo); // updates state capacity
-//                    State.st.decrementChunkDeg(fileId, chunkNo, this.id);
                     State.st.setAmStoringChunk(fileId, chunkNo, -1);
                     currentCap -= chunkSize;
-
-//                    RemovedMsg removedMsg = new RemovedMsg(this.id, fileId, chunkNo);
-                    // TODO Create removedMsgSender
+                    this.chordNode.send(new RemovedMsg(fileId, chunkNo, this.address, this.port, chunkId));
                 }
 
                 if (currentCap <= 0)
