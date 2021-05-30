@@ -117,7 +117,7 @@ public class SockThread implements Runnable {
     }
 
     private int doHandshake(SSLEngine engine, SocketChannel socketChannel,
-                            ByteBuffer myNetData, ByteBuffer peerNetData) throws IOException {
+                            ByteBuffer myNetData, ByteBuffer peerNetData, boolean isEnd) throws IOException {
         // See example 8-2 of the docs
         // https://docs.oracle.com/en/java/javase/11/security/java-secure-socket-extension-jsse-reference-guide.html#GUID-AC6700ED-ADC4-41EA-B111-2AEF2CBF7744
 
@@ -126,7 +126,8 @@ public class SockThread implements Runnable {
         ByteBuffer myAppData = ByteBuffer.allocate(appBufferSize);
         ByteBuffer peerAppData = ByteBuffer.allocate(appBufferSize);
 
-        engine.beginHandshake();
+        if (isEnd) engine.closeOutbound();
+        else engine.beginHandshake();
 
         SSLEngineResult.HandshakeStatus hs = engine.getHandshakeStatus();
         while (hs != SSLEngineResult.HandshakeStatus.FINISHED &&
@@ -200,10 +201,12 @@ public class SockThread implements Runnable {
                         case BUFFER_UNDERFLOW:
                             throw new SSLException("Buffer underflow on wrap.");
                         case CLOSED:
+                            /*
                             myNetData.flip();
                             while (myNetData.hasRemaining())
                                 socketChannel.write(myNetData);
                             peerNetData.clear();
+                             */
                             break;
                         default:
                             throw new IllegalStateException("Unexpected value: " + res.getStatus());
@@ -221,23 +224,25 @@ public class SockThread implements Runnable {
         return 0;
     }
 
+    private int doHandshake(SSLEngine engine, SocketChannel socketChannel,
+                            ByteBuffer myNetData, ByteBuffer peerNetData) throws IOException {
+        return this.doHandshake(engine, socketChannel, myNetData, peerNetData, false);
+    }
+
     private void closeSSLConnection(SSLEngine engine, SocketChannel socketChannel) {
-        if (engine.isOutboundDone() && engine.isInboundDone()) // if engine is closed => go away
-            return;
-
-        engine.closeOutbound();
-
         int netBufferMax = engine.getSession().getPacketBufferSize();
         ByteBuffer myNetData = ByteBuffer.allocate(netBufferMax);
         ByteBuffer peerNetData = ByteBuffer.allocate(netBufferMax);
         try {
-            this.doHandshake(engine, socketChannel, myNetData, peerNetData);
-        } catch (IOException ignored) {
+            this.doHandshake(engine, socketChannel, myNetData, peerNetData, true);
+        } catch (IOException e) {
+            e.printStackTrace();
         }
 
         try {
             socketChannel.close(); // :(
-        } catch (IOException ignored) {
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
@@ -308,7 +313,8 @@ public class SockThread implements Runnable {
             } else if (n > 0) {
                 // process incoming data
                 bufs[3].flip();
-                while (bufs[3].hasRemaining()) {
+                boolean closed = false;
+                while (bufs[3].hasRemaining() && !closed) {
                     bufs[2].clear();
                     SSLEngineResult res;
                     try {
@@ -334,7 +340,7 @@ public class SockThread implements Runnable {
                             bufs[2] = this.enlargeAppBuffer(engine, bufs[2]);
                             break;
                         case CLOSED:
-                            this.closeSSLConnection(engine, socketChannel);
+                            closed = true;
                             break;
                     }
                 }
