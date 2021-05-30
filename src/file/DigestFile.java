@@ -22,7 +22,7 @@ import java.util.Objects;
 import static java.lang.Math.pow;
 
 public class DigestFile {
-    public static final int MAX_CHUNK_SIZE = 64000;
+    public static final int MAX_CHUNK_SIZE = 12000;  // 64000;
 
     private final static Integer CHUNK_LEN = 256;
     private static final int MAX_CHUNK_NUM = 999999;

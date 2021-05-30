@@ -18,7 +18,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class SockThread implements Runnable {
     private static final int MAX_CONNS = 5;
-    private static final int PACKET_MAX_SIZE = 70000;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final ExecutorService threadPool =
@@ -288,8 +287,6 @@ public class SockThread implements Runnable {
                 continue;
             }
 
-            bufs[3] = ByteBuffer.allocate(PACKET_MAX_SIZE);
-
             // receive loop - read TLS encoded data from peer
             int n = 0;
             while (n == 0) {
@@ -338,7 +335,6 @@ public class SockThread implements Runnable {
                             break;
                         case CLOSED:
                             this.closeSSLConnection(engine, socketChannel);
-
                             break;
                     }
                 }
@@ -409,12 +405,12 @@ public class SockThread implements Runnable {
             return;
         }
 
-        bufs[0] = ByteBuffer.allocate(PACKET_MAX_SIZE);
         bufs[0].put(dataToSend);
         bufs[0].flip();
 
         // send loop
-        while (bufs[0].hasRemaining()) {
+        boolean closed = false;
+        while (bufs[0].hasRemaining() && !closed) {
             SSLEngineResult res;
             try {
                 res = engine.wrap(bufs[0], bufs[1]);
@@ -443,8 +439,7 @@ public class SockThread implements Runnable {
                     System.err.println("Buffer underflow that I don't understand.");
                     return;
                 case CLOSED:
-                    this.closeSSLConnection(engine, socketChannel);
-                    bufs[0] = ByteBuffer.allocate(dataToSend.length + 1000);
+                    closed = true;
                     break;
             }
         }
