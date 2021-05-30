@@ -29,7 +29,6 @@ public class Peer implements TestInterface {
     private boolean closed = false;
     // cmd line arguments
     private final String id;
-    private final String accessPoint;
     private final InetAddress address;
     private final int port;
 
@@ -39,24 +38,18 @@ public class Peer implements TestInterface {
             Executors.newScheduledThreadPool(Runtime.getRuntime().availableProcessors() + 1);
 
     public Registry registry = null;
-    public String rmiName = null;
-
-    public String getAccessPointName() {
-        return this.accessPoint;
-    }
 
     public Peer(String[] args) throws IOException {
         // parse args
-        if (args.length != 4) usage();
+        if (args.length != 3) usage();
 
         this.id = args[0];
         // set the file dir name for the rest of the program (create it if missing)
         // and get info
         DigestFile.setFileDir(this.id);
 
-        this.accessPoint = args[1];
-        this.address = InetAddress.getByName(args[2]);
-        this.port = Integer.parseInt(args[3]);
+        this.address = InetAddress.getByName(args[1]);
+        this.port = Integer.parseInt(args[2]);
 
         System.out.println(this);
         System.out.println("Initialized program.");
@@ -183,7 +176,8 @@ public class Peer implements TestInterface {
                 System.err.println("Failed to unregister our chordNode from the RMI service.");
             }
             try {
-                registry.unbind(rmiName);
+                assert chordNode != null;
+                registry.unbind("peer" + this.id);
             } catch (RemoteException | NotBoundException e) {
                 System.err.println("Failed to unregister our Peer instance from the RMI service.");
             }
@@ -208,36 +202,13 @@ public class Peer implements TestInterface {
         do {
             cmd = scanner.nextLine();
             System.out.println("CMD: " + cmd);
-            String filePath = "../test_files/filename.txt";
-            // String filePath = "../test_files/64k.txt";
-            if (cmd.startsWith("join")) {
-                String[] opts = cmd.split(" ");
-                if (opts.length != 3) {
-                    System.err.println("Join Usage: join addr port");
-                    continue;
-                }
-                String addr = opts[1], port = opts[2];
-                InetAddress address;
+            // String filePath = "../test_files/filename.txt";
+            String filePath = "../test_files/64k.txt";
+            if (cmd.equalsIgnoreCase("join")) {
                 try {
-                    address = InetAddress.getByName(addr);
-                } catch (UnknownHostException e) {
-                    System.err.println("Invalid address");
-                    continue;
-                }
-                int nodeId = ChordNode.genId(address, Integer.parseInt(port));
-                System.err.println("Gen node id " + nodeId);
-                ChordInterface node;
-                try {
-                    node = (ChordInterface) this.registry.lookup(Integer.toString(nodeId));
-                } catch (RemoteException | NotBoundException e) {
-                    System.err.println("Failed to find node with given address and port");
-                    continue;
-                }
-                try {
-                    this.chordNode.join(node);
+                    System.out.println(this.join());
                 } catch (RemoteException e) {
-                    System.err.println("Failed to get response from node");
-                    continue;
+                    e.printStackTrace();
                 }
             } else if (cmd.equalsIgnoreCase("st")) {
                 System.out.println(this.chordNode);
@@ -283,6 +254,31 @@ public class Peer implements TestInterface {
     }
 
     /* used by the TestApp (RMI) */
+    @Override
+    public String join() throws RemoteException {
+        String[] l = this.registry.list();
+        String peerId = null;
+        for (var e : l) {
+            if (!e.startsWith("peer") && !e.equals(String.valueOf(chordNode.getId()))) {
+                peerId = e;
+            }
+        }
+        if (peerId == null)
+            return "Couldn't find a node to join the network with";
+        System.out.println(peerId);
+
+        ChordInterface node;
+        try {
+            System.out.println(peerId);
+            node = (ChordInterface) this.registry.lookup(peerId);
+        } catch (NotBoundException e) {
+            return "An attempted lookup to a node in the network failed";
+        }
+        this.chordNode.join(node);
+        // Resume pending tasks
+        this.handlePendingTasks();
+        return "Join success";
+    }
     @Override
     public String backup(String filePath, Integer replicationDegree) throws RemoteException {
         String[] task = new String[]{"BACKUP", filePath, replicationDegree.toString()};
@@ -561,14 +557,12 @@ public class Peer implements TestInterface {
 
     @Override
     public String toString() {
-        return
-                "Peer id: " + this.id + "\n" +
-                        "Service access point: " + this.accessPoint + "\n";
+        return "Peer id (and access point): peer" + this.id + "\n";
     }
 
     private static void usage() {
         System.err.println("Usage: java\n" +
-                "\tProj1 <peer id> <service access point>\n" +
+                "\tProj1 <peer id>\n" +
                 "\t<ip address> <port>");
         System.exit(1);
     }
@@ -594,7 +588,6 @@ public class Peer implements TestInterface {
             finalProg.cleanup();
         }));
 
-        prog.handlePendingTasks();
         // In this function we are verifying the modified files :). Hope your day is going as intended. Bye <3
         prog.verifyModifiedFiles();
 
@@ -604,15 +597,8 @@ public class Peer implements TestInterface {
 
         try {
             stub = (TestInterface) UnicastRemoteObject.exportObject(prog, 0);
-            String[] rmiinfoSplit = prog.getAccessPointName().split(":");
-            prog.rmiName = rmiinfoSplit[0];
-
-            if (rmiinfoSplit.length > 1)
-                prog.registry = LocateRegistry.getRegistry("localhost", Integer.parseInt(rmiinfoSplit[1]));
-            else
-                prog.registry = LocateRegistry.getRegistry();
-
-            prog.registry.bind(prog.rmiName, stub);
+            prog.registry = LocateRegistry.getRegistry();
+            prog.registry.bind(("peer" + prog.id), stub);
         } catch (Exception e) {
             System.err.println("Failed setting up the access point for use by the testing app.");
             System.exit(1);
