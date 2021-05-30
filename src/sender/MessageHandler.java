@@ -6,10 +6,14 @@ import message.*;
 import state.State;
 import utils.Pair;
 
+import javax.net.ssl.SSLServerSocketFactory;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
 import java.io.IOException;
 import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.rmi.RemoteException;
-import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -51,7 +55,7 @@ public class MessageHandler {
             State.st.declareChunk(message.getFileId(), message.getChunkNo());
             isInitiator = State.st.isInitiator(message.getFileId());
             if (!isInitiator) {
-                 // do not store duplicated chunks or if we surpass storage space or
+                 // do not store duplicated chunks or if we surpass storage space
                  if (!State.st.amIStoringChunk(message.getFileId(), message.getChunkNo())) {
                      if (!message.reInitiateBackup() && // We want to redirect to succ if we don't have the chunk if it is to be reInitated
                              State.st.updateStorageSize(message.getChunk().length)) {
@@ -101,7 +105,7 @@ public class MessageHandler {
         // I am responsible and i stored the message
         if (iStoredTheChunk && message.getSeqNumber() == message.getReplication()) {
             System.out.println("I am responsible for chunk " + message.getFileId() + " " + message.getChunkNo());
-            message.setSource(this.chordNode); // 'Subscribe' to all stored messages
+            message.setSource(this.chordNode);
         }
 
         // send STORED reply message to our predecessor if we stored the chunk/already had it
@@ -147,6 +151,7 @@ public class MessageHandler {
 
         synchronized (State.st) {
             DigestFile.deleteFile(message.getFileId());
+            State.st.removeSuccChunk(message.getFileId());
         }
 
         try {
