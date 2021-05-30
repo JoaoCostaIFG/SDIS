@@ -5,8 +5,8 @@ import java.net.InetAddress;
 public class PutChunkMsg extends Message {
     public static final String type = "PUTCHUNK";
     private final Integer chunkNo;
-    private final Integer replication;
-    private final byte[] chunk;
+    private Integer replication;
+    private byte[] chunk;
     private int seqNumber;
 
     public PutChunkMsg(String fileId,
@@ -19,12 +19,17 @@ public class PutChunkMsg extends Message {
     }
 
     public PutChunkMsg(String fileId, Integer chunkNo, byte[] chunk, int replication, int destId) {
-        super(fileId, null, -1, destId);
+        super(fileId, null, -1, destId); // The source is set later by the responsible node when it receives this message
         this.fileId = fileId;
         this.chunkNo = chunkNo;
         this.replication = replication;
         this.chunk = chunk;
         this.seqNumber = replication;
+    }
+
+    // Used to tell a responsible node to restart backup protocol without giving the chunk to backup
+    public PutChunkMsg(String fileId, Integer chunkNo, InetAddress address, int port, Integer chunkId) {
+        this(fileId, chunkNo, null, -1, address, port, chunkId);
     }
 
     public void decreaseCurrentRep() {
@@ -51,8 +56,24 @@ public class PutChunkMsg extends Message {
         return replication;
     }
 
+    public boolean reInitiateBackup() {
+        return replication == -1; // If a replication isn't specified, the message just tells to restart the putchunk protocol for this chunk
+    }
+
     public boolean hasNoSource() {
         return this.getSourcePort() == -1 && this.getSourceAddress() == null;
+    }
+
+    public void setReplication(int replication) {
+        this.replication = replication;
+    }
+
+    public void setSeqNumber(int seqNumber) {
+        this.seqNumber = seqNumber;
+    }
+
+    public void setChunk(byte[] chunk) {
+        this.chunk = chunk;
     }
 
     @Override
@@ -62,6 +83,7 @@ public class PutChunkMsg extends Message {
 
     @Override
     public String toString() {
-        return super.toString() + " FileId:" + fileId + " ChunkNo:" + chunkNo + " Rep:" + replication + " SeqNum:" + seqNumber;
+        return super.toString() + (Message.DEBUG_MODE ? " FileId: " + fileId + " ChunkNo:" + chunkNo : "")
+                + " Rep:" + replication + " SeqNum:" + seqNumber;
     }
 }

@@ -38,6 +38,7 @@ public class ChunkMsg extends Message {
 
     @Override
     public String toString() {
-        return super.toString() + " FileId:" + fileId + " ChunkNo:" + chunkNo + " ChunkSize:" + chunk.length;
+        return super.toString() + (Message.DEBUG_MODE ? " FileId: " + fileId + " ChunkNo:" + chunkNo : "")
+                + " ChunkSize:" + chunk.length;
     }
 }

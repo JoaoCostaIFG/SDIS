@@ -26,6 +26,6 @@ public class GetChunkMsg extends Message {
 
     @Override
     public String toString() {
-        return super.toString() + " FileId:" + fileId + " ChunkNo:" + chunkNo;
+        return super.toString() + (Message.DEBUG_MODE ? " FileId: " + fileId + " ChunkNo:" + chunkNo : "");
     }
 }

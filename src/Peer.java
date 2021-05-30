@@ -76,8 +76,8 @@ public class Peer implements TestInterface {
                         }
                     }
                 },
-                1000,
-                1000
+                100,
+                100
         );
 
         new java.util.Timer().scheduleAtFixedRate(
@@ -87,8 +87,8 @@ public class Peer implements TestInterface {
                         chordNode.fixFingers();
                     }
                 },
-                1000,
-                1000
+                100,
+                100
         );
 
         new java.util.Timer().scheduleAtFixedRate(
@@ -98,8 +98,8 @@ public class Peer implements TestInterface {
                         chordNode.checkPredecessor();
                     }
                 },
-                10000,
-                10000
+                100,
+                100
         );
     }
 
@@ -317,6 +317,7 @@ public class Peer implements TestInterface {
         }
 
         State.st.rmTask(task);
+
         return "Backed up the file: " + filePath;
     }
 
@@ -420,10 +421,11 @@ public class Peer implements TestInterface {
             String fileId = entry.getKey();
             for (var chunkEntry : entry.getValue().getAllChunks().entrySet()) {
                 int chunkNo = chunkEntry.getKey();
-                boolean isStored = chunkEntry.getValue() != -1;
+                boolean isStored = chunkEntry.getValue().p2 != -1;
                 if (isStored) {
                     // if we have the chunk stored => delete it && decrement perceived rep.
                     byte[] chunk;
+                    // Get chunk and its id
                     int chunkId;
                     try {
                         chunk = DigestFile.readChunk(fileId, chunkNo);
@@ -431,10 +433,25 @@ public class Peer implements TestInterface {
                     } catch (IOException e) {
                         throw new RemoteException("Couldn't find supposed stored chunk " + fileId + " " + chunkNo);
                     }
+                    // Delete the chunk and update state
                     long chunkSize = DigestFile.deleteChunk(fileId, chunkNo); // updates state capacity
                     State.st.setAmStoringChunk(fileId, chunkNo, -1);
                     currentCap -= chunkSize;
-                    this.chordNode.send(new RemovedMsg(fileId, chunkNo, this.address, this.port, chunkId));
+                    // Send Removed message to the responsible of the chunk
+                    this.chordNode.send(new RemovedMsg(fileId, chunkNo, this.address, this.port, chunkId,
+                            chunkId, false));
+
+                    // Send Removed message to our predecessor so that it updates the chunks that it thinks we store
+                    RemovedMsg predMsg = new RemovedMsg(fileId, chunkNo, this.address, this.port, chunkId,
+                            chunkId, true);
+                    try {
+                        this.chordNode.sendDirectly(predMsg, this.chordNode.getPredecessor());
+                    } catch (RemoteException e) {
+                        System.err.println("Couldn't send REMOVED message to predecessor");
+                        if (currentCap <= 0)
+                            break;
+                        continue;
+                    }
                 }
 
                 if (currentCap <= 0)
@@ -489,6 +506,8 @@ public class Peer implements TestInterface {
         filesIInitiated.append("Files I initiated the backup of:\n");
         StringBuilder chunksIStore = new StringBuilder();
         chunksIStore.append("Chunks I am storing:\n");
+        StringBuilder chunksSuccIsStoring = new StringBuilder();
+        chunksSuccIsStoring.append("Chunks my succ is storing:\n");
 
         long maxStorageSizeKB;
         long filledB;
@@ -507,17 +526,23 @@ public class Peer implements TestInterface {
                         filesIInitiated.append("\t\t\tID: ").append(chunkEntry.getKey()).append("\n");
                     }
                 } else {
+                    chunksIStore.append("\tFile ID: ").append(fileId).append("\n");
                     for (var chunkEntry : fileInfo.getAllChunks().entrySet()) {
-                        int chunkId = chunkEntry.getKey();
-                        boolean isStored = chunkEntry.getValue() != -1;
+                        int chunkNo = chunkEntry.getKey();
+                        int chunkId = fileInfo.getChunkId(chunkNo);
+                        boolean isStored = chunkEntry.getValue().p2 != -1;
                         if (!isStored)  // only show chunks we are currently storing
                             continue;
 
-                        chunksIStore.append("\tChunk ID: ").append(fileId).append(" - ").append(chunkId).append("\n");
-                        chunksIStore.append("\t\tSize: ").append(DigestFile.getChunkSize(fileId, chunkId)).append("\n");
+                        chunksIStore.append("\tChunk no: ").append(chunkNo).append(" Id: ").append(chunkId).append("\n");
+                        chunksIStore.append("\t\tSize: ").append(DigestFile.getChunkSize(fileId, chunkNo)).append("\n");
                         chunksIStore.append("\t\tDesired replication degree: ").append(fileInfo.getDesiredRep()).append("\n");
                     }
                 }
+                for (var entry2: State.st.getSuccChunksIds().entrySet())
+                    chunksSuccIsStoring.append("\tFileId: ").append(entry2.getKey().p1)
+                            .append(" ChunkNo: ").append(entry2.getKey().p2)
+                            .append(" ChunkId: ").append(entry2.getValue()).append("\n");
             }
 
             maxStorageSizeKB = State.st.getMaxDiskSpaceKB();
@@ -527,6 +552,7 @@ public class Peer implements TestInterface {
         long filledKB = Math.round(filledB / 1000.0);
         return filesIInitiated
                 .append(chunksIStore)
+                .append(chunksSuccIsStoring)
                 .append("Storing ").append(filledKB == 0 ? (filledB + "B") : (filledKB + "KB"))
                 .append(" of a maximum of ")
                 .append(maxStorageSizeKB < 0 ? "infinite " : maxStorageSizeKB).append("KB.")

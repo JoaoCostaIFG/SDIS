@@ -12,6 +12,7 @@ import java.util.List;
 public abstract class Message implements Serializable {
     public static final String type = "FILEMESSAGE";
     public static final String CRLF = "END";
+    public static final boolean DEBUG_MODE = false;
 
     protected String header;
     protected String version;
@@ -103,11 +104,16 @@ public abstract class Message implements Serializable {
 
     @Override
     public String toString() {
-        return this.getType() + "{" +
-                "From:" + sourceAddress + ":" + sourcePort + " " +
-                "To:" + destAddress + ":" + destPort + " " +
-                "destId:" + destId + " " +
-                "path" + path +
-                "}";
+        String res = this.getType() + "{";
+
+        if (DEBUG_MODE) {
+            res += "From:" + sourceAddress + ":" + sourcePort + " " +
+                "To:" + destAddress + ":" + destPort + " ";
+        }
+        res += "destId:" + destId + " " +
+            "path" + path +
+            "}";
+
+        return res;
     }
 }

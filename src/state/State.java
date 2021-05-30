@@ -1,7 +1,10 @@
 package state;
 
 import file.DigestFile;
+import utils.Pair;
+import utils.Triplet;
 
+import java.beans.IntrospectionException;
 import java.io.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -17,7 +20,9 @@ public class State implements Serializable {
 
     // fileId -> fileInformation
     private final ConcurrentMap<String, FileInfo> replicationMap;
-    // peerId -> set(fileId's que tem a dar delete)
+    // stores the chunks that our successor is storing (FileId, ChunkId) -> ChunkNo
+    private Map<Pair<String, Integer>, Integer> succChunks;
+
     private volatile Long maxDiskSpaceB;
     private volatile transient long filledStorageSizeB;
 
@@ -25,6 +30,7 @@ public class State implements Serializable {
         this.tasks = new ConcurrentHashMap<>();
         this.replicationMap = new ConcurrentHashMap<>();
         this.maxDiskSpaceB = -1L;
+        succChunks = new HashMap<>();
     }
 
     public static State getState() {
@@ -143,6 +149,8 @@ public class State implements Serializable {
             FileInfo fileInfo = this.replicationMap.get(fileId);
             fileInfo.setDesiredRep(desiredRep);
         }
+
+
     }
 
     public void addFileEntry(String fileId, int desiredRep) {
@@ -172,10 +180,33 @@ public class State implements Serializable {
         return this.replicationMap.get(fileId).getDesiredRep();
     }
 
+    // SUCCESSOR STORED CHUNKS
+    public void addSuccChunk(String fileId, int chunkNo, int chunkId) {
+        this.succChunks.put(new Pair<>(fileId, chunkNo), chunkId);
+    }
+
+    public void removeSuccChunk(String fileId, int chunkNo) {
+        this.succChunks.remove(new Pair<>(fileId, chunkNo));
+    }
+
+    public void replaceSuccChunk(Map<Pair<String, Integer>, Integer> map) {
+        this.succChunks.clear();
+        this.succChunks = map;
+    }
+
+    public Map<Pair<String, Integer>, Integer> getSuccChunksIds() {
+        return this.succChunks;
+    }
+
     // OTHER
     public boolean amIStoringChunk(String fileId, int chunkNo) {
         if (!this.replicationMap.containsKey(fileId)) return false;
         return this.replicationMap.get(fileId).amIStoringChunk(chunkNo);
+    }
+
+    public void setAmStoringChunk(String fileId, int chunkNo, int chunkId, int seqNumber) {
+        if (!this.replicationMap.containsKey(fileId)) return;
+        this.replicationMap.get(fileId).setAmStoringChunk(chunkNo, chunkId, seqNumber);
     }
 
     public void setAmStoringChunk(String fileId, int chunkNo, int seqNumber) {
@@ -191,5 +222,22 @@ public class State implements Serializable {
 
     public Map<String, FileInfo> getAllFilesInfo() {
         return this.replicationMap;
+    }
+
+    public Map<Pair<String, Integer>, Integer> getAllStoredChunksId() {
+        Map<Pair<String, Integer>, Integer> res = new HashMap<>();
+        for (String fileId : this.replicationMap.keySet()) {
+            FileInfo fileInfo = this.replicationMap.get(fileId);
+            if (!fileInfo.isInitiator()) {
+                for (var chunk: fileInfo.getAllChunks().entrySet()) {
+                    int chunkNo = chunk.getKey();
+                    if (fileInfo.amIStoringChunk(chunkNo)) {
+                        int chunkId = chunk.getValue().p1;
+                        res.put(new Pair<>(fileId, chunkNo), chunkId);
+                    }
+                }
+            }
+        }
+        return res;
     }
 }
