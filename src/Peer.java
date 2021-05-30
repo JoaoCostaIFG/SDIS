@@ -208,8 +208,8 @@ public class Peer implements TestInterface {
         do {
             cmd = scanner.nextLine();
             System.out.println("CMD: " + cmd);
-            //String filePath = "../test_files/1b.txt";
-            String filePath = "../test_files/64k.txt";
+            String filePath = "../test_files/filename.txt";
+            // String filePath = "../test_files/64k.txt";
             if (cmd.startsWith("join")) {
                 String[] opts = cmd.split(" ");
                 if (opts.length != 3) {
@@ -239,7 +239,7 @@ public class Peer implements TestInterface {
                     System.err.println("Failed to get response from node");
                     continue;
                 }
-            } else if (cmd.startsWith("st")) {
+            } else if (cmd.equalsIgnoreCase("st")) {
                 System.out.println(this.chordNode);
             } else if (cmd.startsWith("backup")) {
                 String[] opts = cmd.split(" ");
@@ -269,8 +269,14 @@ public class Peer implements TestInterface {
                 } catch (RemoteException e) {
                     e.printStackTrace();
                 }
+            } else if (cmd.equalsIgnoreCase("state")) {
+                try {
+                    System.out.println(this.state());
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
             }
-        } while (!cmd.equalsIgnoreCase("EXIT"));
+    } while (!cmd.equalsIgnoreCase("EXIT"));
 
         // shush threads
         this.chordNode.stop();
@@ -498,12 +504,12 @@ public class Peer implements TestInterface {
                     filesIInitiated.append("\t\tDesired replication degree: ").append(fileInfo.getDesiredRep()).append("\n");
                     filesIInitiated.append("\t\tChunks:\n");
                     for (var chunkEntry : fileInfo.getAllChunks().entrySet()) {
-                        filesIInitiated.append("\t\t\tID: ").append(chunkEntry.getKey());
+                        filesIInitiated.append("\t\t\tID: ").append(chunkEntry.getKey()).append("\n");
                     }
                 } else {
                     for (var chunkEntry : fileInfo.getAllChunks().entrySet()) {
                         int chunkId = chunkEntry.getKey();
-                        boolean isStored = chunkEntry.getValue() == -1;
+                        boolean isStored = chunkEntry.getValue() != -1;
                         if (!isStored)  // only show chunks we are currently storing
                             continue;
 
