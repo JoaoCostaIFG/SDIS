@@ -383,23 +383,8 @@ public class SockThread implements Runnable {
         d.peerNetData.clear();
         // receive loop - read TLS encoded data from peer
         int n = socketChannel.read(d.peerNetData);
-
-        // end of stream
-        if (n < 0) {
-            System.err.println("Got end of stream from peer. Attempting to close connection.");
-            try {
-                d.engine.closeInbound();
-            } catch (SSLException e) {
-                System.err.println("Peer didn't follow the correct connection end procedure.");
-            }
-
-            this.closeSSLConnection(d.engine, socketChannel, d.myNetData);
-            return;
-        } else if (n == 0) {
-            return;
-        }
-
         d.peerNetData.flip();
+
         // process incoming data
         while (d.peerNetData.hasRemaining()) {
             SSLEngineResult res;
@@ -429,7 +414,19 @@ public class SockThread implements Runnable {
             }
         }
 
-        return;
+        // end of stream
+        if (n < 0) {
+
+            System.err.println("Got end of stream from peer. Attempting to close connection.");
+            try {
+                d.engine.closeInbound();
+            } catch (SSLException e) {
+                System.err.println("Peer didn't follow the correct connection end procedure.");
+            }
+
+            this.closeSSLConnection(d.engine, socketChannel, d.myNetData);
+            return;
+        }
     }
 
     private void write(SocketChannel socketChannel, SSLEngineData d) throws IOException {
@@ -485,6 +482,7 @@ public class SockThread implements Runnable {
                 System.err.println("Handshake failed");
                 return;
             }
+            socketChannel.configureBlocking(true);
         } catch (Exception e) {
             e.printStackTrace();
             System.err.println("Handshake failed");
