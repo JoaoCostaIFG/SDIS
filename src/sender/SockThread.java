@@ -36,8 +36,6 @@ public class SockThread implements Runnable {
     private Selector selector;
 
     public SockThread(InetAddress address, Integer port, Observer chordNode) throws IOException {
-        System.setProperty("jdk.tls.acknowledgeCloseNotify", "true");
-
         this.address = address;
         this.port = port;
         this.observer = chordNode;
@@ -59,7 +57,7 @@ public class SockThread implements Runnable {
             tmf.init(ts);
 
             // get instance of SSLContext for TLS protocols
-            SSLContext sslCtx = SSLContext.getInstance("TLS");
+            SSLContext sslCtx = SSLContext.getInstance("TLSv1.2");
             sslCtx.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
             this.sslc = sslCtx;
         } catch (KeyStoreException | CertificateException | NoSuchAlgorithmException | IOException | UnrecoverableKeyException | KeyManagementException e) {
@@ -174,10 +172,13 @@ public class SockThread implements Runnable {
                 case NEED_UNWRAP:
                     if (socketChannel.read(peerNetData) < 0) {
                         // end of stream => no more io
-                        engine.closeInbound();
                         engine.closeOutbound();
-                        hs = engine.getHandshakeStatus();
-                        break;
+                        try {
+                            engine.closeInbound();
+                        } catch (SSLException e) {
+                            System.err.println("Peer didn't follow the correct connection end procedure.");
+                        }
+                        return 1;
                     }
 
                     // process incoming handshake data
@@ -352,18 +353,23 @@ public class SockThread implements Runnable {
                     try {
                         SocketChannel socketChannel = (SocketChannel) key.channel();
                         SSLEngineData d = (SSLEngineData) key.attachment();
-                        ByteArrayOutputStream content = this.read(socketChannel, d);
 
-                        // create message instance from the received bytes
-                        ByteArrayInputStream bis = new ByteArrayInputStream(content.toByteArray());
-                        ObjectInput in = new ObjectInputStream(bis);
-                        Message msg = (Message) in.readObject();
-                        bis.close();
-                        // handle message
-                        this.threadPool.execute(
-                                () -> {
-                                    this.observer.handle(msg);
-                                });
+                        this.read(socketChannel, d);
+                        // if connection ended
+                        if (d.engine.isOutboundDone() && d.engine.isInboundDone()) {
+                            // create message instance from the received bytes
+                            ByteArrayInputStream bis = new ByteArrayInputStream(
+                                    Arrays.copyOfRange(d.peerAppData.array(), 0, d.peerAppData.limit())
+                            );
+                            ObjectInput in = new ObjectInputStream(bis);
+                            Message msg = (Message) in.readObject();
+                            bis.close();
+                            // handle message
+                            this.threadPool.execute(
+                                    () -> {
+                                        this.observer.handle(msg);
+                                    });
+                        }
                     } catch (IOException | ClassNotFoundException e) {
                         e.printStackTrace();
                     }
@@ -372,12 +378,13 @@ public class SockThread implements Runnable {
         }
     }
 
-    private ByteArrayOutputStream read(SocketChannel socketChannel, SSLEngineData d) throws IOException, ClassNotFoundException {
+    private void read(SocketChannel socketChannel, SSLEngineData d)
+            throws IOException, ClassNotFoundException {
+        d.peerNetData.clear();
         // receive loop - read TLS encoded data from peer
         int n = socketChannel.read(d.peerNetData);
 
-        // end of stream state
-        ByteArrayOutputStream content = new ByteArrayOutputStream();
+        // end of stream
         if (n < 0) {
             System.err.println("Got end of stream from peer. Attempting to close connection.");
             try {
@@ -387,9 +394,9 @@ public class SockThread implements Runnable {
             }
 
             this.closeSSLConnection(d.engine, socketChannel, d.myNetData);
-            return content;
+            return;
         } else if (n == 0) {
-            return content;
+            return;
         }
 
         d.peerNetData.flip();
@@ -400,18 +407,11 @@ public class SockThread implements Runnable {
                 res = d.engine.unwrap(d.peerNetData, d.peerAppData);
             } catch (SSLException e) {
                 this.closeSSLConnection(d.engine, socketChannel, d.myNetData);
-                return content;
+                return;
             }
 
             switch (res.getStatus()) {
                 case OK:
-                    // flip it to create the message object bellow
-                    d.peerAppData.flip();
-                    try {
-                        content.write(Arrays.copyOfRange(d.peerAppData.array(), 0, d.peerAppData.limit()));
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
                     break;
                 case BUFFER_OVERFLOW:
                     d.peerAppData = this.handleOverflow(d.engine, d.peerAppData);
@@ -425,11 +425,11 @@ public class SockThread implements Runnable {
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
-                    return content;
+                    return;
             }
         }
 
-        return content;
+        return;
     }
 
     private void write(SocketChannel socketChannel, SSLEngineData d) throws IOException {
@@ -437,8 +437,6 @@ public class SockThread implements Runnable {
         while (d.myAppData.hasRemaining()) {
             SSLEngineResult res;
             res = d.engine.wrap(d.myAppData, d.myNetData);
-
-            System.out.println(res);
 
             switch (res.getStatus()) {
                 case OK:
@@ -513,14 +511,6 @@ public class SockThread implements Runnable {
         try {
             this.write(socketChannel, d);
         } catch (IOException e) {
-            e.printStackTrace();
-        }
-
-        // read
-        try {
-            ByteArrayOutputStream content = this.read(socketChannel, d);
-            System.out.println(content.toString());
-        } catch (IOException | ClassNotFoundException e) {
             e.printStackTrace();
         }
 
