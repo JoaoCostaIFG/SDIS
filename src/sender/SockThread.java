@@ -243,9 +243,7 @@ public class SockThread implements Runnable {
             }
         }
 
-        while (!engine.isOutboundDone()) {
-            // zzz
-        }
+        while (!engine.isOutboundDone()) { /* zzz */ }
         socketChannel.close();
     }
 
