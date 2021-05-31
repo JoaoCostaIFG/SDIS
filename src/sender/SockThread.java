@@ -259,26 +259,30 @@ public class SockThread implements Runnable {
         return this.doHandshake(engine, socketChannel, myNetData, peerNetData, false);
     }
 
-    private void closeSSLConnection(SSLEngine engine, SocketChannel socketChannel, ByteBuffer myNetData) throws IOException {
-        engine.closeOutbound();
-        while (myNetData.hasRemaining())
-            socketChannel.write(myNetData);
+    private void closeSSLConnection(SocketChannel socketChannel, SSLEngineData d) throws IOException {
+        d.engine.closeOutbound();
+        while (d.myNetData.hasRemaining())
+            socketChannel.write(d.myNetData);
 
-        myNetData.clear();
-        SSLEngineResult byebye = engine.wrap(ByteBuffer.allocate(0), myNetData);
-        if (byebye.getStatus() != SSLEngineResult.Status.CLOSED)
-            throw new IOException("Invalid state for closure.");
+        // send bye bye
+        d.myAppData.clear(); // empty buffer
+        while (!d.engine.isOutboundDone()) {
+            d.myNetData.clear();
+            SSLEngineResult res = d.engine.wrap(d.myAppData, d.myNetData);
 
-        myNetData.flip();
-        while (myNetData.hasRemaining()) {
-            try {
-                socketChannel.write(myNetData);
-            } catch (IOException ignored) {
-                break;
+            switch (res.getStatus()) {
+                case OK:
+                    d.myNetData.flip();
+                    while (d.myNetData.hasRemaining())
+                        socketChannel.write(d.myNetData);
+                    break;
+                case BUFFER_OVERFLOW:
+                    d.myNetData = this.handleWrapOverflow(d.engine, d.myNetData);
+                    break;
             }
         }
 
-        while (!engine.isOutboundDone()) { /* zzz */ }
+        // Close transport
         socketChannel.close();
     }
 
@@ -369,7 +373,7 @@ public class SockThread implements Runnable {
                                         this.observer.handle(msg);
                                     });
                             System.out.println("closing");
-                            this.closeSSLConnection(d.engine, socketChannel, d.myNetData);
+                            this.closeSSLConnection(socketChannel, d);
                         }
                     } catch (IOException | ClassNotFoundException e) {
                         e.printStackTrace();
@@ -392,7 +396,7 @@ public class SockThread implements Runnable {
             try {
                 res = d.engine.unwrap(d.peerNetData, d.peerAppData);
             } catch (SSLException e) {
-                this.closeSSLConnection(d.engine, socketChannel, d.myNetData);
+                this.closeSSLConnection(socketChannel, d);
                 return;
             }
 
@@ -411,7 +415,7 @@ public class SockThread implements Runnable {
                     break;
                 case CLOSED:
                     try {
-                        this.closeSSLConnection(d.engine, socketChannel, d.myNetData);
+                        this.closeSSLConnection(socketChannel, d);
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
@@ -428,7 +432,7 @@ public class SockThread implements Runnable {
                 System.err.println("Peer didn't follow the correct connection end procedure.");
             }
 
-            this.closeSSLConnection(d.engine, socketChannel, d.myNetData);
+            this.closeSSLConnection(socketChannel, d);
         }
     }
 
@@ -452,7 +456,7 @@ public class SockThread implements Runnable {
                 case BUFFER_UNDERFLOW:
                     throw new SSLException("WTF UNDERFLOW");
                 case CLOSED:
-                    this.closeSSLConnection(d.engine, socketChannel, d.peerNetData);
+                    this.closeSSLConnection(socketChannel, d);
                     return;
             }
         }
@@ -515,15 +519,9 @@ public class SockThread implements Runnable {
             e.printStackTrace();
         }
 
-        try {
-            this.read(socketChannel, d);
-        } catch (IOException | ClassNotFoundException e) {
-            e.printStackTrace();
-        }
-
         // close connection
         try {
-            this.closeSSLConnection(engine, socketChannel, bufs[1]);
+            this.closeSSLConnection(socketChannel, d);
         } catch (IOException e) {
             e.printStackTrace();
         }
