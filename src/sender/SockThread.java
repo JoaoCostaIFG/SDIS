@@ -7,10 +7,7 @@ import java.io.*;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.Selector;
-import java.nio.channels.ServerSocketChannel;
-import java.nio.channels.SocketChannel;
+import java.nio.channels.*;
 import java.nio.channels.spi.SelectorProvider;
 import java.security.*;
 import java.security.cert.CertificateException;
@@ -289,14 +286,25 @@ public class SockThread implements Runnable {
         ByteBuffer[] bufs = this.createBuffers(engine);
 
         try {
+            socketChannel.register(this.selector, SelectionKey.OP_READ,
+                    new SSLEngineData(engine, bufs[0], bufs[1], bufs[2], bufs[3], true));
+        } catch (ClosedChannelException e) {
+            e.printStackTrace();
+            return;
+        }
+
+        try {
             if (this.doHandshake(engine, socketChannel, bufs[1], bufs[3]) != 0) {
                 System.err.println("Handshake failed (accept con)");
-            } else {
-                socketChannel.register(this.selector, SelectionKey.OP_READ,
-                        new SSLEngineData(engine, bufs[0], bufs[1], bufs[2], bufs[3], true));
+                socketChannel.close();
             }
         } catch (Exception e) {
             e.printStackTrace();
+            try {
+                socketChannel.close();
+            } catch (IOException ioException) {
+                ioException.printStackTrace();
+            }
         }
     }
 
@@ -315,9 +323,8 @@ public class SockThread implements Runnable {
             while (selectedKeys.hasNext()) {
                 SelectionKey key = selectedKeys.next();
                 selectedKeys.remove();
-                if (!key.isValid()) {
+                if (!key.isValid())
                     continue;
-                }
 
                 if (key.isAcceptable()) {
                     this.acceptCon(key);
@@ -358,9 +365,7 @@ public class SockThread implements Runnable {
             throws IOException, ClassNotFoundException {
         d.peerNetData.clear();
         // receive loop - read TLS encoded data from peer
-        System.out.println("A");
         int n = socketChannel.read(d.peerNetData);
-        System.out.println("B");
         // end of stream
         if (n < 0) {
             System.err.println("Got end of stream from peer. Attempting to close connection.");
@@ -373,14 +378,13 @@ public class SockThread implements Runnable {
             return true;
         }
 
-        System.out.println(n);
         // process incoming data
         d.peerNetData.flip();
         while (d.peerNetData.hasRemaining()) {
             SSLEngineResult res;
             res = d.engine.unwrap(d.peerNetData, d.peerAppData);
 
-            System.out.println("READ: " + res);
+            //System.out.println("READ: " + res);
 
             switch (res.getStatus()) {
                 case OK:
@@ -410,7 +414,7 @@ public class SockThread implements Runnable {
             SSLEngineResult res;
             res = d.engine.wrap(d.myAppData, d.myNetData);
 
-            System.out.println("WRITE " + res);
+            //System.out.println("WRITE " + res);
 
             switch (res.getStatus()) {
                 case OK:
@@ -477,6 +481,12 @@ public class SockThread implements Runnable {
         } catch (Exception e) {
             e.printStackTrace();
             return;
+        }
+
+        try {
+            Thread.sleep(600);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
         }
 
         // send message

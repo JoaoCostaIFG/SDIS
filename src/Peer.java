@@ -208,8 +208,8 @@ public class Peer implements TestInterface {
         do {
             cmd = scanner.nextLine();
             System.out.println("CMD: " + cmd);
-            String filePath = "../test_files/filename.txt";
-            //String filePath = "../test_files/64k.txt";
+            // String filePath = "../test_files/filename.txt";
+            String filePath = "../test_files/64k.txt";
             if (cmd.startsWith("join")) {
                 String[] opts = cmd.split(" ");
                 if (opts.length != 3) {
