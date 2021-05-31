@@ -319,7 +319,7 @@ public class SockThread implements Runnable {
 
         try {
             if (this.doHandshake(engine, socketChannel, bufs[1], bufs[3]) != 0) {
-                System.err.println("Handshake failed");
+                System.err.println("Handshake failed (accept con)");
             } else {
                 socketChannel.register(this.selector, SelectionKey.OP_READ,
                         new SSLEngineData(engine, bufs[0], bufs[1], bufs[2], bufs[3]));
@@ -355,12 +355,11 @@ public class SockThread implements Runnable {
                         SSLEngineData d = (SSLEngineData) key.attachment();
 
                         this.read(socketChannel, d);
+                        System.out.println("Finished reading");
                         // if connection ended
                         if (d.engine.isOutboundDone() && d.engine.isInboundDone()) {
                             // create message instance from the received bytes
-                            ByteArrayInputStream bis = new ByteArrayInputStream(
-                                    Arrays.copyOfRange(d.peerAppData.array(), 0, d.peerAppData.limit())
-                            );
+                            ByteArrayInputStream bis = new ByteArrayInputStream(d.content.toByteArray());
                             ObjectInput in = new ObjectInputStream(bis);
                             Message msg = (Message) in.readObject();
                             bis.close();
@@ -369,6 +368,8 @@ public class SockThread implements Runnable {
                                     () -> {
                                         this.observer.handle(msg);
                                     });
+                            System.out.println("closing");
+                            this.closeSSLConnection(d.engine, socketChannel, d.myNetData);
                         }
                     } catch (IOException | ClassNotFoundException e) {
                         e.printStackTrace();
@@ -397,6 +398,10 @@ public class SockThread implements Runnable {
 
             switch (res.getStatus()) {
                 case OK:
+                    d.peerAppData.flip();
+                    d.content.write(Arrays.copyOfRange(d.peerAppData.array(), d.peerAppData.position(),
+                            d.peerAppData.limit()));
+                    d.peerAppData.clear();
                     break;
                 case BUFFER_OVERFLOW:
                     d.peerAppData = this.handleOverflow(d.engine, d.peerAppData);
@@ -416,7 +421,6 @@ public class SockThread implements Runnable {
 
         // end of stream
         if (n < 0) {
-
             System.err.println("Got end of stream from peer. Attempting to close connection.");
             try {
                 d.engine.closeInbound();
@@ -425,7 +429,6 @@ public class SockThread implements Runnable {
             }
 
             this.closeSSLConnection(d.engine, socketChannel, d.myNetData);
-            return;
         }
     }
 
@@ -479,13 +482,13 @@ public class SockThread implements Runnable {
         ByteBuffer[] bufs = this.createBuffers(engine);
         try {
             if (this.doHandshake(engine, socketChannel, bufs[1], bufs[3]) != 0) {
-                System.err.println("Handshake failed");
+                System.err.println("Handshake failed (init handshake)");
                 return;
             }
             socketChannel.configureBlocking(true);
         } catch (Exception e) {
             e.printStackTrace();
-            System.err.println("Handshake failed");
+            System.err.println("Handshake failed (init handshake 2)");
             return;
         }
 
@@ -509,6 +512,12 @@ public class SockThread implements Runnable {
         try {
             this.write(socketChannel, d);
         } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        try {
+            this.read(socketChannel, d);
+        } catch (IOException | ClassNotFoundException e) {
             e.printStackTrace();
         }
 
