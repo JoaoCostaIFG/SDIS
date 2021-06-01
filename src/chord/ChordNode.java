@@ -363,7 +363,6 @@ public class ChordNode implements ChordInterface {
         return ChordNode.inBetween(num, lf, rh, false, false);
     }
 
-
     public boolean messageIsForUs(Message message) {
         if (this.getPredecessor() == null) // Assume message is for us if our predecessor bye
             return true;

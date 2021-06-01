@@ -30,7 +30,7 @@ public class SockThread implements Runnable {
     private final Observer observer;
 
     private SSLContext sslc;
-    private Selector selector;
+    private final Selector selector;
 
     public SockThread(InetAddress address, Integer port, Observer chordNode) throws IOException {
         this.address = address;
@@ -80,9 +80,15 @@ public class SockThread implements Runnable {
         this.threadPool.shutdown();
 
         try {
+            this.selector.close();
+        } catch (IOException e) {
+            System.err.println("Selector close threw an exception.");
+        }
+
+        try {
             this.serverSocketChannel.close();
         } catch (IOException e) {
-            e.printStackTrace();
+            System.err.println("Server socket channel threw an exception while closing.");
         }
     }
 
@@ -207,11 +213,9 @@ public class SockThread implements Runnable {
                     }
                     break;
                 case NEED_WRAP:
-                    // ensure that any previous net data in myNetData has been sent to the peer
-                    /*
-                    while (myNetData.hasRemaining())
-                        socketChannel.write(myNetData);
-                     */
+                    // IMP: ensure that any previous net data in myNetData has been
+                    // sent to the peer (done when sending)
+
                     // clear the rest of the buffer
                     myNetData.clear();
 
@@ -339,10 +343,7 @@ public class SockThread implements Runnable {
                             bis.close();
 
                             // handle message
-                            this.threadPool.execute(
-                                    () -> {
-                                        this.observer.handle(msg);
-                                    });
+                            this.threadPool.execute(() -> this.observer.handle(msg));
                         }
                     } catch (IOException | ClassNotFoundException e) {
                         e.printStackTrace();
@@ -505,32 +506,6 @@ public class SockThread implements Runnable {
     }
 
     private void closeSSLConnectionServer(SocketChannel socketChannel, SSLEngineData d) throws IOException {
-        /*
-        System.out.println("Waiting for closure");
-        xau:
-        while (true) {
-            d.peerNetData.clear();
-            int n = socketChannel.read(d.peerNetData);
-            if (n < 0) {
-                d.engine.closeOutbound();
-                socketChannel.close();
-               return;
-            } else if (n == 0) {
-                continue;
-            }
-
-            d.peerNetData.flip();
-            while (d.peerNetData.hasRemaining()) {
-                SSLEngineResult res = d.engine.unwrap(d.peerNetData, d.peerAppData);
-                System.out.println("Closure: " + res);
-                if (res.getStatus() == SSLEngineResult.Status.CLOSED)
-                    break xau;
-            }
-        }
-        d.engine.closeInbound();
-        System.out.println("Closed inbound");
-         */
-
         d.engine.closeInbound();
 
         // System.out.println("Closing outbound");
