@@ -51,20 +51,17 @@ public class MessageHandler {
             return; // We sent this message and it has looped through the network
         }
 
-        boolean iStoredTheChunk = false, reInitBackup = false, isInitiator;
-        String filePath = "";
+        boolean iStoredTheChunk = false, isInitiator;
         int chunkId = -1;
         synchronized (State.st) {
             // always register the existence of this file except when we want to reinit backup protocol
-            if (!message.reInitiateBackup())
-                State.st.addFileEntry(message.getFileId(), message.getReplication());
             State.st.declareChunk(message.getFileId(), message.getChunkNo());
+            State.st.addFileEntry(message.getFileId(), message.getReplication());
             isInitiator = State.st.isInitiator(message.getFileId());
             if (!isInitiator) {
                  // do not store duplicated chunks or if we surpass storage space
                  if (!State.st.amIStoringChunk(message.getFileId(), message.getChunkNo())) {
-                     if (!message.reInitiateBackup() && // We want to redirect to succ if we don't have the chunk if it is to be reInitated
-                             State.st.updateStorageSize(message.getChunk().length)) {
+                     if (State.st.updateStorageSize(message.getChunk().length)) {
                          try {
                              DigestFile.writeChunk(message.getFileId(), message.getChunkNo(),
                                      message.getChunk(), message.getChunk().length);
@@ -79,33 +76,12 @@ public class MessageHandler {
                          iStoredTheChunk = true;
                      }
                  } else {
-                     if (message.reInitiateBackup()) reInitBackup = true;
                      // Update sequence number
                      chunkId = DigestFile.getId(message.getFileId(), message.getChunkNo());
                      State.st.setAmStoringChunk(message.getFileId(), message.getChunkNo(), message.getSeqNumber());
                      iStoredTheChunk = true;
                  }
-             } else { // We are the initator
-                filePath = State.st.getFileInfo(message.getFileId()).getFilePath();
-                if (message.reInitiateBackup()) reInitBackup = true;
-            }
-        }
-
-        if (reInitBackup) { // This happens when the chunk is missing from the msg, so we fill it
-            byte[] chunk;
-            int rep = State.st.getFileDeg(message.getFileId());
-            try {
-                if (!isInitiator)
-                    chunk = DigestFile.readChunk(message.getFileId(), message.getChunkNo());
-                else
-                    chunk = DigestFile.divideFileChunk(filePath, message.getChunkNo());
-            } catch (IOException e) {
-                System.err.println("No chunk :" + message.getFileId() + " " + message.getChunkNo() + " found");
-                return;
-            }
-            message.setChunk(chunk);
-            message.setReplication(rep);
-            message.setSeqNumber(rep);
+             }
         }
 
         // I am responsible and i stored the message
@@ -122,7 +98,7 @@ public class MessageHandler {
             try {
                 address = this.chordNode.getPredecessor().getAddress();
                 port = this.chordNode.getPredecessor().getPort();
-            } catch (RemoteException e) {
+            } catch (RemoteException | NullPointerException e) {
                 System.err.println("Couldn't find predecessor to send him a STORED reply");
                 return;
             }
@@ -197,6 +173,9 @@ public class MessageHandler {
     }
 
     private void handleMsg(RemovedMsg message) {
+        if (message.hasNoSource()) // We are responsible for this message, mark us as responsible
+            message.setSource(this.chordNode);
+
         if (this.messageSentByUs(message) && message.destAddrKnown()) {
             System.out.println("\t\tMessage looped through network " + message);
             return; // We sent this message and it has looped through the network
@@ -245,11 +224,7 @@ public class MessageHandler {
                 this.chordNode.sendDirectly(message, chordNode.getSuccessor());
             } catch (RemoteException e) {
                 System.err.println("Couldn't pass " + message + " to my successor");
-                return;
             }
-
-            // We don't need the chord ring to hop to the dest, we just need to hop it to next successor successively
-            message.setDestId(null);
         }
     }
 

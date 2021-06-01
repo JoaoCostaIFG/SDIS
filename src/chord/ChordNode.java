@@ -2,6 +2,7 @@ package chord;
 
 import message.Message;
 import message.PutChunkMsg;
+import message.RemovedMsg;
 import sender.MessageHandler;
 import sender.Observer;
 import sender.SockThread;
@@ -94,8 +95,12 @@ public class ChordNode implements ChordInterface, Observer {
 
             try {
                 succ.getId();
-                if (goneBad)
+                if (goneBad) {
                     this.reconcile(succ);
+
+                    // My successor died, call backup protocol on the chunks i think he was storing
+                    this.backupSuccessorChunks();
+                }
                 return succ;
             } catch (RemoteException ignored) {
                 goneBad = true;
@@ -221,9 +226,6 @@ public class ChordNode implements ChordInterface, Observer {
             // System.out.println("They tell me it's: " + fingerTable[nextFingerToFix].getId());
         } catch (RemoteException e) {
             fingerTable[nextFingerToFix] = this;
-            if (nextFingerToFix == 0) { // My successor died, call bakup protocol on the chunks i think he was storing
-                this.backupSuccessorChunks();
-            }
         }
         ++nextFingerToFix;
     }
@@ -234,12 +236,16 @@ public class ChordNode implements ChordInterface, Observer {
     @Override
     public ChordInterface findSuccessor(int id) throws RemoteException {
         ChordInterface nprime = this.findPredecessor(id);
+        if (nprime == null) return this;
         return nprime.getSuccessor();
     }
 
     @Override
     public ChordInterface findPredecessor(int id) throws RemoteException {
-        if (this.getId() == this.getSuccessor().getId())  // only node in network
+        ChordInterface succ = this.getSuccessor();
+        if (succ == null) return null;
+
+        if (this.getId() == succ.getId())  // only node in network
             return this;
 
         ChordInterface ret = this;
@@ -284,8 +290,7 @@ public class ChordNode implements ChordInterface, Observer {
         ret.sort((arg0, arg1) -> {
             try {
                 return this.dist(arg1) - this.dist(arg0);
-            } catch (RemoteException e) {
-                e.printStackTrace();
+            } catch (RemoteException ignored) { // Compare someone who died => d = 0
             }
             return 0;
         });
@@ -366,13 +371,16 @@ public class ChordNode implements ChordInterface, Observer {
     }
 
     private void backupSuccessorChunks() {
-        System.out.println("\tMy succ died");
-
         synchronized (State.st) {
-            for (var entry : State.st.getSuccChunksIds().entrySet()) {
-                String fileId = entry.getKey().p1;
-                Integer chunkNo = entry.getKey().p2, chunkId = entry.getValue();
-                this.send(new PutChunkMsg(fileId, chunkNo, this.address, this.port, chunkId));
+            if (State.st.hasSuccChunks()) {
+                for (var entry : State.st.getSuccChunksIds().entrySet()) {
+                    System.out.println("\tMy succ died");
+                    String fileId = entry.getKey().p1;
+                    Integer chunkNo = entry.getKey().p2, chunkId = entry.getValue();
+                    // We want to handle instead of sending because we can have the file
+                    this.messageHandler.handleMessage(new RemovedMsg(fileId, chunkNo, chunkId, chunkId, false));
+                }
+                State.st.clearSuccChunks();
             }
         }
     }

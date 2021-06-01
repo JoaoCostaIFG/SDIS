@@ -27,11 +27,6 @@ public class PutChunkMsg extends Message {
         this.seqNumber = replication;
     }
 
-    // Used to tell a responsible node to restart backup protocol without giving the chunk to backup
-    public PutChunkMsg(String fileId, Integer chunkNo, InetAddress address, int port, Integer chunkId) {
-        this(fileId, chunkNo, null, -1, address, port, chunkId);
-    }
-
     public void decreaseCurrentRep() {
         --this.seqNumber;
     }
@@ -54,10 +49,6 @@ public class PutChunkMsg extends Message {
 
     public int getReplication() {
         return replication;
-    }
-
-    public boolean reInitiateBackup() {
-        return replication == -1; // If a replication isn't specified, the message just tells to restart the putchunk protocol for this chunk
     }
 
     public boolean hasNoSource() {

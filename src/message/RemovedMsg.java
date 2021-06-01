@@ -15,12 +15,15 @@ public class RemovedMsg extends Message {
         this.toPredecessor = toPredecessor;
     }
 
-    public Integer getChunkNo() {
-        return chunkNo;
+    public RemovedMsg(String fileId, int chunkNo, int destId, int chunkId, boolean toPredecessor) {
+        super(fileId, null, -1, destId);
+        this.chunkNo = chunkNo;
+        this.chunkId = chunkId;
+        this.toPredecessor = toPredecessor;
     }
 
-    public int getChunkId() {
-        return chunkId;
+    public Integer getChunkNo() {
+        return chunkNo;
     }
 
     @Override
@@ -30,6 +33,10 @@ public class RemovedMsg extends Message {
 
     public boolean isToPredecessor() {
         return toPredecessor;
+    }
+
+    public boolean hasNoSource() {
+        return this.getSourcePort() == -1 && this.getSourceAddress() == null;
     }
 
     @Override
