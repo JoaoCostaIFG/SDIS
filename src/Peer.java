@@ -265,20 +265,20 @@ public class Peer implements TestInterface {
         }
         if (peerId == null)
             return "Couldn't find a node to join the network with";
-        System.out.println(peerId);
 
         ChordInterface node;
         try {
-            System.out.println(peerId);
             node = (ChordInterface) this.registry.lookup(peerId);
         } catch (NotBoundException e) {
             return "An attempted lookup to a node in the network failed";
         }
         this.chordNode.join(node);
+        System.out.println("Joined peer with id " + peerId);
         // Resume pending tasks
         this.handlePendingTasks();
         return "Join success";
     }
+
     @Override
     public String backup(String filePath, Integer replicationDegree) throws RemoteException {
         String[] task = new String[]{"BACKUP", filePath, replicationDegree.toString()};
@@ -358,6 +358,7 @@ public class Peer implements TestInterface {
             try {
                 byte[] chunk = fut.get();
                 if (chunk == null) { // Getchunk passed through everyone and didn't work
+                    this.chordNode.removeAllChunkFuture(fileId); // clean up all promises (we won't need them)
                     State.st.rmTask(task);
                     throw new RemoteException("Couldn't get chunk " + currChunk);
                 }

@@ -428,9 +428,7 @@ public class SockThread implements Runnable {
         }
     }
 
-    public void send(Message message) {
-        System.out.println("Sent: " + message + "\n");
-
+    private void sendInner(Message message) {
         InetAddress address = message.getDestAddress();
         int port = message.getDestPort();
         // create socket channel
@@ -497,6 +495,13 @@ public class SockThread implements Runnable {
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    public void send(Message message) {
+        this.threadPool.execute(
+            () -> {
+                this.sendInner(message);
+        });
     }
 
     private void closeSSLConnectionServer(SocketChannel socketChannel, SSLEngineData d) throws IOException {

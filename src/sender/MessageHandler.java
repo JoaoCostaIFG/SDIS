@@ -36,6 +36,12 @@ public class MessageHandler {
         this.receivedChunks.put(new Pair<>(fileId, currChunk), fut);
     }
 
+    public void removeAllChunkFuture(String fileId) {
+        for (var entry: this.receivedChunks.entrySet())
+            if (entry.getKey().p1.equals(fileId))
+                this.receivedChunks.remove(entry.getKey(), entry.getValue());
+    }
+
     private void handleMsg(PutChunkMsg message) {
         if (message.hasNoSource()) // We are responsible for this message, mark us as responsible
             message.setSource(this.chordNode);

@@ -301,9 +301,10 @@ public class ChordNode implements ChordInterface, Observer {
     private void sendToNode(Message message) {
         ChordInterface nextHopDest = null;
         try {
+            // TODO Use succ List here
             nextHopDest = closestPrecedingFinger(message.getDestId());
         } catch (RemoteException e) {
-            System.err.println("Could not find successor for message " + message);
+            System.err.println("Could not find successor for message " + message + ". Message not sent.");
             e.printStackTrace();
         }
         assert nextHopDest != null;
@@ -340,12 +341,13 @@ public class ChordNode implements ChordInterface, Observer {
             messageHandler.handleMessage(message);
         }
         else { // message isn't for us
-            System.out.println("Sending: " + message + "\n");
+            System.out.println("Sending (ReHopping): " + message + "\n");
             this.sendToNode(message); // resend it through the chord ring
         }
     }
 
     public void sendDirectly(Message message, InetAddress address, int port) {
+        System.out.println("Sending Directly: " + message + "\n");
         message.setDest(address, port);
         // We don't need the chord ring to hop to the dest so we set it to null
         message.setDestId(null);
@@ -386,6 +388,10 @@ public class ChordNode implements ChordInterface, Observer {
 
     public void addChunkFuture(String fileId, int currChunk, CompletableFuture<byte[]> fut) {
         this.messageHandler.addChunkFuture(fileId, currChunk, fut);
+    }
+
+    public void removeAllChunkFuture(String fileId) {
+        this.messageHandler.removeAllChunkFuture(fileId);
     }
 
     @Override
