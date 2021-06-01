@@ -4,7 +4,6 @@ import java.net.InetAddress;
 
 public class StoredMsg extends Message {
     public static final String type = "STORED";
-    private final String fileId;
     private final int chunkNo;
     private final int chunkId;
 

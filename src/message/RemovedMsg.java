@@ -35,10 +35,6 @@ public class RemovedMsg extends Message {
         return toPredecessor;
     }
 
-    public boolean hasNoSource() {
-        return this.getSourcePort() == -1 && this.getSourceAddress() == null;
-    }
-
     @Override
     public String toString() {
         return super.toString() + (Message.DEBUG_MODE ? " FileId: " + fileId : "") + " ChunkId: " + chunkId;

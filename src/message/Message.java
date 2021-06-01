@@ -10,13 +10,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 public abstract class Message implements Serializable {
-    public static final String type = "FILEMESSAGE";
-    public static final String CRLF = "END";
     public static final boolean DEBUG_MODE = true;
 
-    protected String header;
-    protected String version;
-    protected String id;
     protected String fileId;
     private InetAddress destAddress;
     private int destPort;
@@ -26,14 +21,9 @@ public abstract class Message implements Serializable {
     private Integer destId;
     private List<Integer> path;
 
-    // TODO cleanup this
-    public Message(String fileId) {
+    public Message(String fileId, InetAddress sourceAddress, int sourcePort, Integer destId) {
         this.fileId = fileId;
         this.path = new ArrayList<>();
-    }
-
-    public Message(String fileId, InetAddress sourceAddress, int sourcePort, Integer destId) {
-        this(fileId);
         this.destId = destId;
         this.sourceAddress = sourceAddress;
         this.sourcePort = sourcePort;
@@ -43,16 +33,8 @@ public abstract class Message implements Serializable {
 
     /* GETTERS */
 
-    public String getVersion() {
-        return version;
-    }
-
     public String getFileId() {
         return fileId;
-    }
-
-    public String getSenderId() {
-        return this.id;
     }
 
     public InetAddress getSourceAddress() {
@@ -77,6 +59,10 @@ public abstract class Message implements Serializable {
 
     public boolean destAddrKnown() {
         return destId == null; // we don't know the destination and we are trying to figure it out
+    }
+
+    public boolean hasNoSource() {
+        return this.getSourcePort() == -1 && this.getSourceAddress() == null;
     }
 
     /* SETTERS */

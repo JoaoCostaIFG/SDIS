@@ -35,10 +35,6 @@ public class PutChunkMsg extends Message {
         return seqNumber;
     }
 
-    public String getFileId() {
-        return fileId;
-    }
-
     public int getChunkNo() {
         return chunkNo;
     }
@@ -49,22 +45,6 @@ public class PutChunkMsg extends Message {
 
     public int getReplication() {
         return replication;
-    }
-
-    public boolean hasNoSource() {
-        return this.getSourcePort() == -1 && this.getSourceAddress() == null;
-    }
-
-    public void setReplication(int replication) {
-        this.replication = replication;
-    }
-
-    public void setSeqNumber(int seqNumber) {
-        this.seqNumber = seqNumber;
-    }
-
-    public void setChunk(byte[] chunk) {
-        this.chunk = chunk;
     }
 
     @Override

@@ -13,10 +13,6 @@ public class GetChunkMsg extends Message {
         this.chunkNo = chunkNo;
     }
 
-    public String getFileId() {
-        return fileId;
-    }
-
     public Integer getChunkNo() {
         return chunkNo;
     }
