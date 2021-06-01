@@ -528,7 +528,7 @@ public class SockThread implements Runnable {
 
         d.engine.closeInbound();
 
-        System.out.println("Closing outbound");
+        // System.out.println("Closing outbound");
         d.engine.closeOutbound();
         d.myAppData.clear().flip(); // empty buffer
         while (!d.engine.isOutboundDone()) {
@@ -541,15 +541,15 @@ public class SockThread implements Runnable {
             while (d.myNetData.hasRemaining())
                 socketChannel.write(d.myNetData);
         }
-        System.out.println("Closed outbound");
+        // System.out.println("Closed outbound");
 
         // xau rossetta
         socketChannel.close();
-        System.out.println("XAU SOCKET");
+        // System.out.println("XAU SOCKET");
     }
 
     private void closeSSLConnectionClient(SocketChannel socketChannel, SSLEngineData d) throws IOException {
-        System.out.println("Closing outbound");
+        // System.out.println("Closing outbound");
         d.engine.closeOutbound();
         // send bye bye
         d.myAppData.clear().flip(); // empty buffer
@@ -563,9 +563,9 @@ public class SockThread implements Runnable {
             while (d.myNetData.hasRemaining())
                 socketChannel.write(d.myNetData);
         }
-        System.out.println("Closed outbound");
+        // System.out.println("Closed outbound");
 
-        System.out.println("Waiting for closure");
+        // System.out.println("Waiting for closure");
         xau:
         while (true) {
             d.peerNetData.clear();
@@ -587,11 +587,11 @@ public class SockThread implements Runnable {
             }
         }
         d.engine.closeInbound();
-        System.out.println("Closed inbound");
+        // System.out.println("Closed inbound");
 
         // xau rossetta
         socketChannel.close();
-        System.out.println("XAU SOCKET");
+        // System.out.println("XAU SOCKET");
     }
 
     private void closeSSLConnection(SocketChannel socketChannel, SSLEngineData d) throws IOException {
