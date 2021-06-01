@@ -1,29 +1,43 @@
 package message;
 
 import java.net.InetAddress;
-import java.nio.ByteBuffer;
 
 public class PutChunkMsg extends Message {
     public static final String type = "PUTCHUNK";
     private final Integer chunkNo;
-    private final Integer replication;
-    private final byte[] chunk;
+    private Integer replication;
+    private byte[] chunk;
+    private int seqNumber;
 
-    public PutChunkMsg(String version, String id, String fileId,
-                       InetAddress sourceDest, int sourcePort, Integer destId,
-                       int chunkNo, int replication, byte[] chunk) {
-        super(version, id, fileId, sourceDest, sourcePort, destId);
-        this.header = version + " " +
-                type + " " +
-                id + " " +
-                fileId + " " +
-                chunkNo + " " +
-                replication + " " +
-                Message.CRLF + Message.CRLF;
+    public PutChunkMsg(String fileId,
+                       int chunkNo, byte[] chunk, int replication, InetAddress sourceDest, int sourcePort, Integer destId) {
+        super(fileId, sourceDest, sourcePort, destId);
+        this.chunkNo = chunkNo;
+        this.replication = replication;
+        this.chunk = chunk;
+        this.seqNumber = replication;
+    }
+
+    public PutChunkMsg(String fileId, Integer chunkNo, byte[] chunk, int replication, int destId) {
+        super(fileId, null, -1, destId); // The source is set later by the responsible node when it receives this message
         this.fileId = fileId;
         this.chunkNo = chunkNo;
         this.replication = replication;
         this.chunk = chunk;
+        this.seqNumber = replication;
+    }
+
+    // Used to tell a responsible node to restart backup protocol without giving the chunk to backup
+    public PutChunkMsg(String fileId, Integer chunkNo, InetAddress address, int port, Integer chunkId) {
+        this(fileId, chunkNo, null, -1, address, port, chunkId);
+    }
+
+    public void decreaseCurrentRep() {
+        --this.seqNumber;
+    }
+
+    public int getSeqNumber() {
+        return seqNumber;
     }
 
     public String getFileId() {
@@ -42,11 +56,24 @@ public class PutChunkMsg extends Message {
         return replication;
     }
 
-    @Override
-    public byte[] getContent() {
-        byte[] packetContent = super.getContent();
-        return ByteBuffer.allocate(packetContent.length + this.chunk.length)
-                .put(packetContent).put(this.chunk).array();
+    public boolean reInitiateBackup() {
+        return replication == -1; // If a replication isn't specified, the message just tells to restart the putchunk protocol for this chunk
+    }
+
+    public boolean hasNoSource() {
+        return this.getSourcePort() == -1 && this.getSourceAddress() == null;
+    }
+
+    public void setReplication(int replication) {
+        this.replication = replication;
+    }
+
+    public void setSeqNumber(int seqNumber) {
+        this.seqNumber = seqNumber;
+    }
+
+    public void setChunk(byte[] chunk) {
+        this.chunk = chunk;
     }
 
     @Override
@@ -55,7 +82,8 @@ public class PutChunkMsg extends Message {
     }
 
     @Override
-    public int getHeaderLen() {
-        return 6;
+    public String toString() {
+        return super.toString() + (Message.DEBUG_MODE ? " FileId: " + fileId + " ChunkNo:" + chunkNo : "")
+                + " Rep:" + replication + " SeqNum:" + seqNumber;
     }
 }

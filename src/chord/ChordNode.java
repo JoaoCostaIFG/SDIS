@@ -1,9 +1,12 @@
 package chord;
 
 import message.Message;
+import message.PutChunkMsg;
 import sender.MessageHandler;
 import sender.Observer;
 import sender.SockThread;
+import state.State;
+import utils.Pair;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -13,6 +16,11 @@ import java.rmi.registry.Registry;
 import java.rmi.server.UnicastRemoteObject;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.sql.Time;
+import java.util.Map;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.concurrent.CompletableFuture;
 
 import static java.lang.Math.pow;
 
@@ -28,14 +36,15 @@ public class ChordNode implements ChordInterface, Observer {
     private final SockThread sock;
 
     public static int m = 7; // Number of bits of the addressing space
+    private static int SUCC_TIMEOUT = 3000;
+    private static int MAX_TRIES = 3;
 
     public ChordNode(InetAddress address, int port, Registry registry) throws IOException {
         this.address = address;
         this.port = port;
         this.id = ChordNode.genId(address, port);
-        this.sock = new SockThread("sock", address, port);
-        this.messageHandler = new MessageHandler(this.id, this.sock);
-        this.messageHandler.addObserver(this);
+        this.sock = new SockThread(address, port, this);
+        this.messageHandler = new MessageHandler(this.sock, this);
 
         this.registry = registry;
         this.nextFingerToFix = 0;
@@ -82,8 +91,21 @@ public class ChordNode implements ChordInterface, Observer {
         return this.fingerTable[0];
     }
 
+    @Override
+    public Map<Pair<String, Integer>, Integer> getStoredChunksIds() throws RemoteException {
+        return State.st.getAllStoredChunksId();
+    }
+
     private void setSuccessor(ChordInterface n) {
         this.fingerTable[0] = n;
+        Map<Pair<String, Integer>, Integer> succStoredChunksIds;
+        try {
+            succStoredChunksIds = n.getStoredChunksIds();
+        } catch (RemoteException ignored) {
+            System.err.println("Couldn't get stored chunks of my new successor");
+            return;
+        }
+        State.st.replaceSuccChunk(succStoredChunksIds);
     }
 
     private int getFingerStartId(int i) {
@@ -150,6 +172,9 @@ public class ChordNode implements ChordInterface, Observer {
             //System.out.println("They tell me it's: " + fingerTable[nextFingerToFix].getId());
         } catch (RemoteException e) {
             fingerTable[nextFingerToFix] = this;
+            if (nextFingerToFix == 0) { // My successor died, call bakup protocol on the chunks i think he was storing
+                this.backupSuccessorChunks();
+            }
         }
         ++nextFingerToFix;
     }
@@ -170,7 +195,7 @@ public class ChordNode implements ChordInterface, Observer {
 
         ChordInterface ret = this;
         while (!(ChordNode.inBetween(id, ret.getId(), ret.getSuccessor().getId(), false, true))) {
-            //System.out.println(id + " E (" + ret.getId() + ", " + ret.getSuccessor().getId() + ")");
+            // System.out.println(id + " E (" + ret.getId() + ", " + ret.getSuccessor().getId() + ")");
             ret = ret.closestPrecedingFinger(id);
         }
         return ret;
@@ -241,6 +266,126 @@ public class ChordNode implements ChordInterface, Observer {
         return ChordNode.inBetween(num, lf, rh, false, false);
     }
 
+    private void backupSuccessorChunks() {
+        System.out.println("\tMy succ died");
+        for (var entry: State.st.getSuccChunksIds().entrySet()) {
+            String fileId = entry.getKey().p1;
+            Integer chunkNo = entry.getKey().p2, chunkId = entry.getValue();
+            this.send(new PutChunkMsg(fileId, chunkNo, this.address, this.port, chunkId));
+        }
+    }
+
+    /* TCP */
+    public void start() {
+        this.sock.start();
+    }
+
+    public void stop() {
+        this.sock.interrupt();
+    }
+
+    public boolean messageIsForUs(Message message) {
+        if (this.predecessor == null) // Assume message is for us if our predecessor bye
+            return true;
+
+        try {
+            return message.destAddrKnown() || // the message was sent directly and without hops for us
+                    ChordNode.inBetween(message.getDestId(), this.predecessor.getId(), this.id, false, true);
+        } catch (RemoteException e) {
+            return true; // Assume that message is for us if chord ring is broken temporarily
+        }
+    }
+
+    private void sendToNode(Message message) {
+        ChordInterface nextHopDest = null;
+        try {
+            nextHopDest = closestPrecedingFinger(message.getDestId());
+        } catch (RemoteException e) {
+            System.err.println("Could not find successor for message " + message);
+            e.printStackTrace();
+        }
+        assert nextHopDest != null;
+        try {
+            if (nextHopDest == this)
+                nextHopDest = getSuccessor();
+            message.setDest(nextHopDest);
+            message.addToPath(nextHopDest.getId());
+        } catch (RemoteException e) { // TODO Max num of tries?
+            System.err.println("Could connect to chosen next hop dest : TODO Max tries with timeout " + message);
+            e.printStackTrace();
+        }
+
+        this.sock.send(message);
+    }
+
+    @Override
+    public void handle(Message message) {
+        System.out.print("\tReceived: " + message + " - ");
+        // Message is for us
+        if (this.messageIsForUs(message)) {
+            System.out.println("Handling\n");
+            messageHandler.handleMessage(message);
+        }
+        else { // message isn't for us
+            System.out.println("Resending\n");
+            this.sendToNode(message); // resend it through the chord ring
+        }
+    }
+
+    public void send(Message message) {
+        if (this.messageIsForUs(message)) {
+            System.out.println("\tNot sending message (its for me): " + message + "\n");
+            messageHandler.handleMessage(message);
+        }
+        else { // message isn't for us
+            System.out.println("Sending: " + message + "\n");
+            this.sendToNode(message); // resend it through the chord ring
+        }
+    }
+
+    public void sendDirectly(Message message, InetAddress address, int port) {
+        message.setDest(address, port);
+        // We don't need the chord ring to hop to the dest so we set it to null
+        message.setDestId(null);
+        this.sock.send(message);
+    }
+
+    public void sendDirectly(Message message, ChordInterface node) throws RemoteException {
+        this.sendDirectly(message, node.getAddress(), node.getPort());
+    }
+
+    public void sendToSucc(Message message) {
+        ChordNode node = this;
+
+        Timer timer = new Timer();
+        TimerTask task = new java.util.TimerTask() {
+            private int count = 0;
+
+            @Override
+            public void run() {
+                try {
+                    node.sendDirectly(message, node.getSuccessor());
+                    timer.cancel();
+                } catch (RemoteException e) {
+                    System.out.println("FAILED ONCE");
+                    ++count;
+                    if (count == MAX_TRIES)
+                        timer.cancel();
+                }
+            }
+        };
+
+        timer.scheduleAtFixedRate(
+                task,
+                100,
+                100
+        );
+    }
+
+    public void addChunkFuture(String fileId, int currChunk, CompletableFuture<byte[]> fut) {
+        this.messageHandler.addChunkFuture(fileId, currChunk, fut);
+    }
+
     @Override
     public String toString() {
         StringBuilder res = new StringBuilder("FingerTable:\n");
@@ -267,41 +412,5 @@ public class ChordNode implements ChordInterface, Observer {
 
         return "Chord id: " + id + "\n" + res + "\n"
                 + "Sock: " + this.sock;
-    }
-
-    /* TCP */
-    public void start() {
-        this.sock.start();
-    }
-
-    public void stop() {
-        this.sock.interrupt();
-    }
-
-    public void send(Message message) {
-        ChordInterface nextHopDest = null;
-        try {
-            nextHopDest = closestPrecedingFinger(message.getDestId());
-        } catch (RemoteException e) {
-            System.err.println("Could not find sucessor for message " + message);
-            e.printStackTrace();
-        }
-        assert nextHopDest != null;
-        try {
-            if (nextHopDest == this)
-                nextHopDest = getSuccessor();
-            message.setDest(nextHopDest);
-            message.addToPath(nextHopDest.getId());
-        } catch (RemoteException e) { // TODO Max num of tries?
-            System.err.println("Could connect to chosen next hop dest : TODO Max tries with timeout " + message);
-            e.printStackTrace();
-        }
-        this.sock.send(message);
-    }
-
-    @Override
-    public void notify(Message message) {
-        if (!message.getDestId().equals(this.id)) // If message isn't for us
-            this.send(message); // resend it through the chord ring
     }
 }

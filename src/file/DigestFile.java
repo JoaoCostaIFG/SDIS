@@ -1,11 +1,13 @@
 package file;
 
+import chord.ChordNode;
 import state.State;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -17,10 +19,14 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
+import static java.lang.Math.pow;
+
 public class DigestFile {
+    public static final int MAX_CHUNK_SIZE = 12000;  // 64000;
+
     private final static Integer CHUNK_LEN = 256;
-    private static final int MAX_CHUNK_SIZE = 64000;
     private static final int MAX_CHUNK_NUM = 999999;
+
     public static String PEER_DIR = "." + File.separator + "peer" + File.separator;
     public static String FILE_DIR = PEER_DIR + "stored" + File.separator;
     public static String RESTORE_DIR = PEER_DIR + "restored" + File.separator;
@@ -60,8 +66,7 @@ public class DigestFile {
 
     /* get the hash that identifies a given file */
     public static String getHash(String filename) throws IOException {
-        String filePath = PEER_DIR + filename;
-        String bitString = getBitString(Paths.get(filePath));
+        String bitString = getBitString(Paths.get(filename));
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             final byte[] bytes = digest.digest(bitString.getBytes(StandardCharsets.US_ASCII));
@@ -75,6 +80,19 @@ public class DigestFile {
         return "";
     }
 
+    /* returns id of a chunk */
+    public static int getId(byte[] chunk) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-1");
+            byte[] hash = digest.digest(chunk);
+            ByteBuffer wrapped = ByteBuffer.wrap(hash);
+            int div = (int) Math.floor(pow(2, ChordNode.m));
+            return Math.floorMod(wrapped.getInt(), div);
+        } catch (NoSuchAlgorithmException ignored) {
+        }
+        return -1;
+    }
+
     /* checks if a file needs more chunks to be stored than the maximum allowed */
     private static boolean surpassesMaxChunks(Path filePath) throws IOException {
         return ((Files.size(filePath) / MAX_CHUNK_SIZE) > MAX_CHUNK_NUM);
@@ -82,7 +100,7 @@ public class DigestFile {
 
     /* returns the number of chunks used to store a given file. -1 if the file is too big */
     public static int getChunkCount(String filename) throws IOException {
-        Path filePath = Paths.get(PEER_DIR + filename);
+        Path filePath = Paths.get(filename);
         if (surpassesMaxChunks(filePath)) return -1;
         return (int) ((Files.size(filePath) / MAX_CHUNK_SIZE) + 1);
     }
@@ -177,7 +195,7 @@ public class DigestFile {
 
     /* divide a file into chunks */
     public static List<byte[]> divideFile(String filename, int replicationDegree) throws IOException {
-        Path filePath = Paths.get(PEER_DIR + filename);
+        Path filePath = Paths.get(filename);
         if (surpassesMaxChunks(filePath))
             throw new IOException("File is too big (mas não te vou alocar).");
 
@@ -215,7 +233,7 @@ public class DigestFile {
     }
 
     public static byte[] divideFileChunk(String filename, int chunkNo) throws IOException {
-        Path filePath = Paths.get(PEER_DIR + filename);
+        Path filePath = Paths.get(filename);
         if (surpassesMaxChunks(filePath))
             throw new IOException("File is too big (mas não te vou alocar).");
 

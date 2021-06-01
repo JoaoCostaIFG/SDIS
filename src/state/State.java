@@ -1,7 +1,10 @@
 package state;
 
 import file.DigestFile;
+import utils.Pair;
+import utils.Triplet;
 
+import java.beans.IntrospectionException;
 import java.io.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -17,16 +20,17 @@ public class State implements Serializable {
 
     // fileId -> fileInformation
     private final ConcurrentMap<String, FileInfo> replicationMap;
-    // peerId -> set(fileId's que tem a dar delete)
-    private final ConcurrentMap<String, HashSet<String>> undeletedFilesByPeer;
+    // stores the chunks that our successor is storing (FileId, ChunkId) -> ChunkNo
+    private Map<Pair<String, Integer>, Integer> succChunks;
+
     private volatile Long maxDiskSpaceB;
     private volatile transient long filledStorageSizeB;
 
     private State() {
         this.tasks = new ConcurrentHashMap<>();
         this.replicationMap = new ConcurrentHashMap<>();
-        this.undeletedFilesByPeer = new ConcurrentHashMap<>();
         this.maxDiskSpaceB = -1L;
+        succChunks = new HashMap<>();
     }
 
     public static State getState() {
@@ -121,13 +125,6 @@ public class State implements Serializable {
         return this.maxDiskSpaceB >= 0 && (this.filledStorageSizeB >= this.maxDiskSpaceB);
     }
 
-    public boolean isChunkOk(String fileId, int chunkNo) {
-        int desiredRepDeg = this.getFileDeg(fileId);
-        int chunkDeg = this.getChunkDeg(fileId, chunkNo);
-
-        return chunkDeg >= desiredRepDeg;
-    }
-
     public boolean isInitiator(String fileId) {
         if (!this.replicationMap.containsKey(fileId)) return false;
         return this.replicationMap.get(fileId).isInitiator();
@@ -152,6 +149,8 @@ public class State implements Serializable {
             FileInfo fileInfo = this.replicationMap.get(fileId);
             fileInfo.setDesiredRep(desiredRep);
         }
+
+
     }
 
     public void addFileEntry(String fileId, int desiredRep) {
@@ -181,60 +180,28 @@ public class State implements Serializable {
         return this.replicationMap.get(fileId).getDesiredRep();
     }
 
-    public int getChunkDeg(String fileId, int chunkNo) {
-        // perceived chunk rep
-        if (!this.replicationMap.containsKey(fileId)) return 0;
-
-        return this.replicationMap.get(fileId).getChunkPerceivedRep(chunkNo);
+    // SUCCESSOR STORED CHUNKS
+    public void addSuccChunk(String fileId, int chunkNo, int chunkId) {
+        this.succChunks.put(new Pair<>(fileId, chunkNo), chunkId);
     }
 
-    public void incrementChunkDeg(String fileId, int chunkNo, String peerId) {
-        if (!this.replicationMap.containsKey(fileId)) return;
-        this.replicationMap.get(fileId).incrementChunkDeg(chunkNo, peerId);
+    public void removeSuccChunk(String fileId, int chunkNo) {
+        this.succChunks.remove(new Pair<>(fileId, chunkNo));
     }
 
-    public void decrementChunkDeg(String fileId, int chunkNo, String peerId) {
-        if (!this.replicationMap.containsKey(fileId)) return;
-        this.replicationMap.get(fileId).decrementChunkDeg(chunkNo, peerId);
+    public void removeSuccChunk(String fileId) {
+        for (var key: succChunks.keySet())
+            if (key.p1.equals(fileId))
+                this.removeSuccChunk(fileId, key.p2);
     }
 
-    // UNDELETED PEER FILES
-    public void addUndeletedPair(String peerId, String fileId) {
-        if (!this.undeletedFilesByPeer.containsKey(peerId))
-            this.undeletedFilesByPeer.put(peerId, new HashSet<>() {{
-                add(fileId);
-            }});
-        this.undeletedFilesByPeer.get(peerId).add(fileId);
+    public void replaceSuccChunk(Map<Pair<String, Integer>, Integer> map) {
+        this.succChunks.clear();
+        this.succChunks = map;
     }
 
-    public boolean removeUndeletedPair(String peerId, String fileId) {
-        if (!this.undeletedFilesByPeer.containsKey(peerId))
-            return false;
-
-        Set<String> s = this.undeletedFilesByPeer.get(peerId);
-        s.remove(fileId);
-        if (s.size() == 0)
-            this.undeletedFilesByPeer.remove(peerId);
-
-        return true;
-    }
-
-    public Set<String> getFilesUndeletedByPeer(String peerId) {
-        return this.undeletedFilesByPeer.get(peerId);
-    }
-
-    public void ignorePeerDeletedFiles(String peerId) {
-        this.undeletedFilesByPeer.remove(peerId);
-    }
-
-    public boolean notToDeleteAnymore(String fileId) {
-        boolean someoneHadIt = false;
-        for (var entry : this.undeletedFilesByPeer.entrySet()) {
-            if (this.removeUndeletedPair(entry.getKey(), fileId))
-                someoneHadIt = true;
-        }
-
-        return someoneHadIt;
+    public Map<Pair<String, Integer>, Integer> getSuccChunksIds() {
+        return this.succChunks;
     }
 
     // OTHER
@@ -243,9 +210,14 @@ public class State implements Serializable {
         return this.replicationMap.get(fileId).amIStoringChunk(chunkNo);
     }
 
-    public void setAmStoringChunk(String fileId, int chunkNo, boolean amStoring) {
+    public void setAmStoringChunk(String fileId, int chunkNo, int chunkId, int seqNumber) {
         if (!this.replicationMap.containsKey(fileId)) return;
-        this.replicationMap.get(fileId).setAmStoringChunk(chunkNo, amStoring);
+        this.replicationMap.get(fileId).setAmStoringChunk(chunkNo, chunkId, seqNumber);
+    }
+
+    public void setAmStoringChunk(String fileId, int chunkNo, int seqNumber) {
+        if (!this.replicationMap.containsKey(fileId)) return;
+        this.replicationMap.get(fileId).setAmStoringChunk(chunkNo, seqNumber);
     }
 
     // ITERATION
@@ -256,5 +228,22 @@ public class State implements Serializable {
 
     public Map<String, FileInfo> getAllFilesInfo() {
         return this.replicationMap;
+    }
+
+    public Map<Pair<String, Integer>, Integer> getAllStoredChunksId() {
+        Map<Pair<String, Integer>, Integer> res = new HashMap<>();
+        for (String fileId : this.replicationMap.keySet()) {
+            FileInfo fileInfo = this.replicationMap.get(fileId);
+            if (!fileInfo.isInitiator()) {
+                for (var chunk: fileInfo.getAllChunks().entrySet()) {
+                    int chunkNo = chunk.getKey();
+                    if (fileInfo.amIStoringChunk(chunkNo)) {
+                        int chunkId = chunk.getValue().p1;
+                        res.put(new Pair<>(fileId, chunkNo), chunkId);
+                    }
+                }
+            }
+        }
+        return res;
     }
 }

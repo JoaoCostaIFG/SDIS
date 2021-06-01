@@ -1,22 +1,26 @@
 package message;
 
+import java.net.InetAddress;
+
 public class RemovedMsg extends Message {
     public static final String type = "REMOVED";
     private final Integer chunkNo;
+    private final boolean toPredecessor;
+    private final int chunkId;
 
-    public RemovedMsg(String version, String id, String fileId, int chunkNo) {
-        super(version, id, fileId);
-        this.header = version + " " +
-                type + " " +
-                id + " " +
-                fileId + " " +
-                chunkNo + " " +
-                Message.CRLF + Message.CRLF;
+    public RemovedMsg(String fileId, int chunkNo, InetAddress sourceDest, int sourcePort, int destId, int chunkId, boolean toPredecessor) {
+        super(fileId, sourceDest, sourcePort, destId);
         this.chunkNo = chunkNo;
+        this.chunkId = chunkId;
+        this.toPredecessor = toPredecessor;
     }
 
     public Integer getChunkNo() {
         return chunkNo;
+    }
+
+    public int getChunkId() {
+        return chunkId;
     }
 
     @Override
@@ -24,13 +28,12 @@ public class RemovedMsg extends Message {
         return type;
     }
 
-    @Override
-    public int getHeaderLen() {
-        return 5;
+    public boolean isToPredecessor() {
+        return toPredecessor;
     }
 
     @Override
     public String toString() {
-        return type + " " + this.fileId + " from " + super.id;
+        return super.toString() + (Message.DEBUG_MODE ? " FileId: " + fileId : "") + " ChunkId: " + chunkId;
     }
 }

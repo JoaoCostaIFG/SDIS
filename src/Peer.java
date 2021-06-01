@@ -1,13 +1,9 @@
 import chord.ChordInterface;
 import chord.ChordNode;
 import file.DigestFile;
-import message.Message;
-import message.PutChunkMsg;
-import sender.GetChunkSender;
-import sender.MessageSender;
+import message.*;
 import state.FileInfo;
 import state.State;
-import utils.Pair;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -23,9 +19,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 
 public class Peer implements TestInterface {
@@ -33,7 +29,6 @@ public class Peer implements TestInterface {
     private boolean closed = false;
     // cmd line arguments
     private final String id;
-    private final String accessPoint;
     private final InetAddress address;
     private final int port;
 
@@ -43,24 +38,18 @@ public class Peer implements TestInterface {
             Executors.newScheduledThreadPool(Runtime.getRuntime().availableProcessors() + 1);
 
     public Registry registry = null;
-    public String rmiName = null;
-
-    public String getAccessPointName() {
-        return this.accessPoint;
-    }
 
     public Peer(String[] args) throws IOException {
         // parse args
-        if (args.length != 4) usage();
+        if (args.length != 3) usage();
 
         this.id = args[0];
         // set the file dir name for the rest of the program (create it if missing)
         // and get info
         DigestFile.setFileDir(this.id);
 
-        this.accessPoint = args[1];
-        this.address = InetAddress.getByName(args[2]);
-        this.port = Integer.parseInt(args[3]);
+        this.address = InetAddress.getByName(args[1]);
+        this.port = Integer.parseInt(args[2]);
 
         System.out.println(this);
         System.out.println("Initialized program.");
@@ -80,8 +69,8 @@ public class Peer implements TestInterface {
                         }
                     }
                 },
-                1000,
-                1000
+                100,
+                100
         );
 
         new java.util.Timer().scheduleAtFixedRate(
@@ -91,8 +80,8 @@ public class Peer implements TestInterface {
                         chordNode.fixFingers();
                     }
                 },
-                1000,
-                1000
+                100,
+                100
         );
 
         new java.util.Timer().scheduleAtFixedRate(
@@ -102,8 +91,8 @@ public class Peer implements TestInterface {
                         chordNode.checkPredecessor();
                     }
                 },
-                10000,
-                10000
+                100,
+                100
         );
     }
 
@@ -171,7 +160,6 @@ public class Peer implements TestInterface {
         }
     }
 
-
     public void cleanup() {
         if (closed) return;
         closed = true;
@@ -182,11 +170,21 @@ public class Peer implements TestInterface {
         // cleanup the access point
         if (registry != null) {
             try {
-                registry.unbind(String.valueOf(chordNode.getId()));
-                registry.unbind(rmiName);
+                if (this.chordNode != null) // Chord node might not be initiated yet
+                    registry.unbind(String.valueOf(chordNode.getId()));
+            } catch (RemoteException | NotBoundException e) {
+                System.err.println("Failed to unregister our chordNode from the RMI service.");
+            }
+            try {
+                assert chordNode != null;
+                registry.unbind("peer" + this.id);
+            } catch (RemoteException | NotBoundException e) {
+                System.err.println("Failed to unregister our Peer instance from the RMI service.");
+            }
+            try {
                 UnicastRemoteObject.unexportObject(this, true);
             } catch (Exception e) {
-                System.err.println("Failed to unregister our RMI service.");
+                System.err.println("Failed to unexport our RMI service.");
             }
         }
 
@@ -204,55 +202,29 @@ public class Peer implements TestInterface {
         do {
             cmd = scanner.nextLine();
             System.out.println("CMD: " + cmd);
-            String filePath = "1b.txt";
-            if (cmd.startsWith("join")) {
-                String[] opts = cmd.split(" ");
-                if (opts.length != 3) {
-                    System.err.println("Join Usage: join addr port");
-                    continue;
-                }
-                String addr = opts[1], port = opts[2];
+            // String filePath = "../test_files/filename.txt";
+            String filePath = "../test_files/64k.txt";
+            if (cmd.equalsIgnoreCase("join")) {
                 try {
-                    InetAddress address = InetAddress.getByName(addr);
-                } catch (UnknownHostException e) {
-                    System.err.println("Invalid address");
-                    continue;
-                }
-                int nodeId = ChordNode.genId(address, Integer.parseInt(port));
-                System.err.println("Gen node id " + nodeId);
-                ChordInterface node;
-                try {
-                    node = (ChordInterface) this.registry.lookup(Integer.toString(nodeId));
-                } catch (RemoteException | NotBoundException e) {
-                    System.err.println("Failed to find node with given address and port");
-                    continue;
-                }
-                try {
-                    this.chordNode.join(node);
-                } catch (RemoteException e) {
-                    System.err.println("Failed to get response from node");
-                    continue;
-                }
-            } else if (cmd.equalsIgnoreCase("st")) {
-                System.out.println(this.chordNode);
-            } else if (cmd.startsWith("send")) {
-                String[] opts = cmd.split(" ");
-                if (opts.length != 2) {
-                    System.err.println("send Usage: send destId");
-                    continue;
-                }
-                Integer destId = Integer.parseInt(opts[1]);
-                this.chordNode.send(new PutChunkMsg("1.0", this.id, "dummyFile", this.address, this.port, destId, 1, 1, null));
-                System.err.println("Sent msg");
-            } else if (cmd.equalsIgnoreCase("backup")) {
-                try {
-                    this.backup(filePath, 1);
+                    System.out.println(this.join());
                 } catch (RemoteException e) {
                     e.printStackTrace();
                 }
-            } else if (cmd.equalsIgnoreCase("reclaim")) {
+            } else if (cmd.equalsIgnoreCase("st")) {
+                System.out.println(this.chordNode);
+            } else if (cmd.startsWith("backup")) {
+                String[] opts = cmd.split(" ");
+                if (opts.length != 2) { System.out.println("Usage: backup repdegree"); continue; }
                 try {
-                    this.reclaim(0);
+                    this.backup(filePath, Integer.parseInt(opts[1]));
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
+            } else if (cmd.startsWith("reclaim")) {
+                String[] opts = cmd.split(" ");
+                if (opts.length != 2) { System.out.println("Usage: reclaim size"); continue; }
+                try {
+                    this.reclaim(Integer.parseInt(opts[1]));
                 } catch (RemoteException e) {
                     e.printStackTrace();
                 }
@@ -262,14 +234,51 @@ public class Peer implements TestInterface {
                 } catch (RemoteException e) {
                     e.printStackTrace();
                 }
+            } else if (cmd.equalsIgnoreCase("delete")) {
+                try {
+                    System.out.println(this.delete(filePath));
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
+            } else if (cmd.equalsIgnoreCase("state")) {
+                try {
+                    System.out.println(this.state());
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
             }
-        } while (!cmd.equalsIgnoreCase("EXIT"));
+    } while (!cmd.equalsIgnoreCase("EXIT"));
 
         // shush threads
         this.chordNode.stop();
     }
 
     /* used by the TestApp (RMI) */
+    @Override
+    public String join() throws RemoteException {
+        String[] l = this.registry.list();
+        String peerId = null;
+        for (var e : l) {
+            if (!e.startsWith("peer") && !e.equals(String.valueOf(chordNode.getId()))) {
+                peerId = e;
+            }
+        }
+        if (peerId == null)
+            return "Couldn't find a node to join the network with";
+        System.out.println(peerId);
+
+        ChordInterface node;
+        try {
+            System.out.println(peerId);
+            node = (ChordInterface) this.registry.lookup(peerId);
+        } catch (NotBoundException e) {
+            return "An attempted lookup to a node in the network failed";
+        }
+        this.chordNode.join(node);
+        // Resume pending tasks
+        this.handlePendingTasks();
+        return "Join success";
+    }
     @Override
     public String backup(String filePath, Integer replicationDegree) throws RemoteException {
         String[] task = new String[]{"BACKUP", filePath, replicationDegree.toString()};
@@ -298,16 +307,13 @@ public class Peer implements TestInterface {
         }
 
         for (int i = 0; i < chunks.size(); ++i) {
-            // only backup chunks that don't have the desired replication degree
-            if (State.st.isChunkOk(fileId, i)) continue;
-
-//            PutChunkMsg putChunkMsg = new PutChunkMsg(this.id,
-//                fileId, i, replicationDegree, chunks.get(i));
-//            PutChunkSender putChunkSender = new PutChunkSender(this.chordNode, putChunkMsg);
-//            putChunkSender.restart();
+            int destId = DigestFile.getId(chunks.get(i));
+            this.chordNode.send(new PutChunkMsg(fileId, i, chunks.get(i),
+                    replicationDegree, this.address, this.port, destId));
         }
 
         State.st.rmTask(task);
+
         return "Backed up the file: " + filePath;
     }
 
@@ -334,35 +340,40 @@ public class Peer implements TestInterface {
 
         // Storing the futures to be able to restore the file after getting all the chunks (or failing
         // if a chunk is missing)
-        List<Pair<Future<?>, MessageSender<? extends Message>>> senders = new ArrayList<>();
+        List<CompletableFuture<byte[]>> promisedChunks = new ArrayList<>();
         for (int currChunk = 0; currChunk < chunkNo; ++currChunk) {
-//            GetChunkMsg msg = new GetChunkMsg(this.id, fileId, currChunk);
-//            MessageSender<? extends Message> chunkSender;
-//            chunkSender = new GetChunkSender(this.chordNode, msg);
-//            senders.add(new Pair<>(this.testAppThreadPool.submit(chunkSender), chunkSender));
+            // Add future to node so that it notifies it
+            CompletableFuture<byte[]> fut = new CompletableFuture<>();
+            promisedChunks.add(fut);
+            this.chordNode.addChunkFuture(fileId, currChunk, fut);
+
+            // Read chunk to get its id TODO Enhance this
+            byte[] c = null;
+            try {
+                c = DigestFile.divideFileChunk(filePath, 1);
+                fileId = DigestFile.getHash(filePath);
+            } catch (IOException e) {
+                System.err.println(filePath + " not found");
+            }
+            // Send getchunk message
+            int destId = DigestFile.getId(c);
+            this.chordNode.send(new GetChunkMsg(fileId, currChunk, this.address, this.port, destId));
         }
 
         List<byte[]> chunks = new ArrayList<>(chunkNo);
-        for (var sender : senders) {
+        for (int currChunk = 0; currChunk < chunkNo; ++currChunk) {
+            CompletableFuture<byte[]> fut = promisedChunks.get(currChunk);
             try {
-                sender.p1.get();
+                byte[] chunk = fut.get();
+                if (chunk == null) { // Getchunk passed through everyone and didn't work
+                    State.st.rmTask(task);
+                    throw new RemoteException("Couldn't get chunk " + currChunk);
+                }
+                chunks.add(chunk);
             } catch (InterruptedException | ExecutionException e) {
                 State.st.rmTask(task);
-                throw new RemoteException("There was an error recovering a chunk of the file.");
+                throw new RemoteException("Couldn't get chunk " + currChunk);
             }
-            int chunkNumber;
-            byte[] chunk;
-            GetChunkSender getChunkSender = (GetChunkSender) sender.p2;
-            chunkNumber = getChunkSender.getMessage().getChunkNo();
-
-            if (!sender.p2.getSuccess()) {
-                State.st.rmTask(task);
-                throw new RemoteException("Failed to restore the file " + filePath +
-                        " because of a missing chunk: " + chunkNumber);
-            }
-
-            chunk = getChunkSender.getResponse();
-            chunks.add(chunk);
         }
 
         Path path = Paths.get(filePath);
@@ -380,10 +391,7 @@ public class Peer implements TestInterface {
     public String deleteFromId(String fileId) {
         // we don't want the old entry anymore
         State.st.removeFileEntry(fileId);
-
-//        DeleteMsg msg = new DeleteMsg(this.id, fileId);
-//        this.MCSock.send(msg);
-
+        this.chordNode.send(new DeleteMsg(fileId, this.chordNode.getAddress(), this.chordNode.getPort(), this.chordNode.getId()));
         return "Success";
     }
 
@@ -400,28 +408,46 @@ public class Peer implements TestInterface {
 
     // force == true => ignore if the the replication degree becomes 0
     // returns capacity left to trim
-    private long trimFiles(long capactityToTrim, boolean force) {
+    private long trimFiles(long capactityToTrim, boolean force) throws RemoteException {
         if (capactityToTrim <= 0) return 0;
 
         long currentCap = capactityToTrim;
 
         for (var entry : State.st.getAllFilesInfo().entrySet()) {
             String fileId = entry.getKey();
-            // int desiredRep = entry.getValue().p1;
-
             for (var chunkEntry : entry.getValue().getAllChunks().entrySet()) {
                 int chunkNo = chunkEntry.getKey();
-                int perceivedRep = chunkEntry.getValue().p1.size();
-                boolean isStored = chunkEntry.getValue().p2;
-                if (isStored && (force || perceivedRep > 1) && perceivedRep > 0) {
+                boolean isStored = chunkEntry.getValue().p2 != -1;
+                if (isStored) {
                     // if we have the chunk stored => delete it && decrement perceived rep.
+                    byte[] chunk;
+                    // Get chunk and its id
+                    int chunkId;
+                    try {
+                        chunk = DigestFile.readChunk(fileId, chunkNo);
+                        chunkId = DigestFile.getId(chunk);
+                    } catch (IOException e) {
+                        throw new RemoteException("Couldn't find supposed stored chunk " + fileId + " " + chunkNo);
+                    }
+                    // Delete the chunk and update state
                     long chunkSize = DigestFile.deleteChunk(fileId, chunkNo); // updates state capacity
-                    State.st.decrementChunkDeg(fileId, chunkNo, this.id);
-                    State.st.setAmStoringChunk(fileId, chunkNo, false);
+                    State.st.setAmStoringChunk(fileId, chunkNo, -1);
                     currentCap -= chunkSize;
+                    // Send Removed message to the responsible of the chunk
+                    this.chordNode.send(new RemovedMsg(fileId, chunkNo, this.address, this.port, chunkId,
+                            chunkId, false));
 
-//                    RemovedMsg removedMsg = new RemovedMsg(this.id, fileId, chunkNo);
-                    // TODO Create removedMsgSender
+                    // Send Removed message to our predecessor so that it updates the chunks that it thinks we store
+                    RemovedMsg predMsg = new RemovedMsg(fileId, chunkNo, this.address, this.port, chunkId,
+                            chunkId, true);
+                    try {
+                        this.chordNode.sendDirectly(predMsg, this.chordNode.getPredecessor());
+                    } catch (RemoteException e) {
+                        System.err.println("Couldn't send REMOVED message to predecessor");
+                        if (currentCap <= 0)
+                            break;
+                        continue;
+                    }
                 }
 
                 if (currentCap <= 0)
@@ -476,6 +502,8 @@ public class Peer implements TestInterface {
         filesIInitiated.append("Files I initiated the backup of:\n");
         StringBuilder chunksIStore = new StringBuilder();
         chunksIStore.append("Chunks I am storing:\n");
+        StringBuilder chunksSuccIsStoring = new StringBuilder();
+        chunksSuccIsStoring.append("Chunks my succ is storing:\n");
 
         long maxStorageSizeKB;
         long filledB;
@@ -491,24 +519,26 @@ public class Peer implements TestInterface {
                     filesIInitiated.append("\t\tDesired replication degree: ").append(fileInfo.getDesiredRep()).append("\n");
                     filesIInitiated.append("\t\tChunks:\n");
                     for (var chunkEntry : fileInfo.getAllChunks().entrySet()) {
-                        filesIInitiated.append("\t\t\tID: ").append(chunkEntry.getKey())
-                                .append(" - Perceived rep.: ").append(chunkEntry.getValue().p1.size()).append("\n");
+                        filesIInitiated.append("\t\t\tID: ").append(chunkEntry.getKey()).append("\n");
                     }
                 } else {
+                    chunksIStore.append("\tFile ID: ").append(fileId).append("\n");
                     for (var chunkEntry : fileInfo.getAllChunks().entrySet()) {
-                        int chunkId = chunkEntry.getKey();
-                        int perceivedRep = chunkEntry.getValue().p1.size();
-                        boolean isStored = chunkEntry.getValue().p2;
+                        int chunkNo = chunkEntry.getKey();
+                        int chunkId = fileInfo.getChunkId(chunkNo);
+                        boolean isStored = chunkEntry.getValue().p2 != -1;
                         if (!isStored)  // only show chunks we are currently storing
                             continue;
 
-                        chunksIStore.append("\tChunk ID: ").append(fileId).append(" - ").append(chunkId).append("\n");
-                        chunksIStore.append("\t\tSize: ").append(DigestFile.getChunkSize(fileId, chunkId)).append("\n");
+                        chunksIStore.append("\tChunk no: ").append(chunkNo).append(" Id: ").append(chunkId).append("\n");
+                        chunksIStore.append("\t\tSize: ").append(DigestFile.getChunkSize(fileId, chunkNo)).append("\n");
                         chunksIStore.append("\t\tDesired replication degree: ").append(fileInfo.getDesiredRep()).append("\n");
-                        chunksIStore.append("\t\tPeers storing this chunk: ").append(fileInfo.getPeersStoringChunk(chunkId)).append("\n");
-                        chunksIStore.append("\t\tPerceived replication degree: ").append(perceivedRep).append("\n");
                     }
                 }
+                for (var entry2: State.st.getSuccChunksIds().entrySet())
+                    chunksSuccIsStoring.append("\tFileId: ").append(entry2.getKey().p1)
+                            .append(" ChunkNo: ").append(entry2.getKey().p2)
+                            .append(" ChunkId: ").append(entry2.getValue()).append("\n");
             }
 
             maxStorageSizeKB = State.st.getMaxDiskSpaceKB();
@@ -518,6 +548,7 @@ public class Peer implements TestInterface {
         long filledKB = Math.round(filledB / 1000.0);
         return filesIInitiated
                 .append(chunksIStore)
+                .append(chunksSuccIsStoring)
                 .append("Storing ").append(filledKB == 0 ? (filledB + "B") : (filledKB + "KB"))
                 .append(" of a maximum of ")
                 .append(maxStorageSizeKB < 0 ? "infinite " : maxStorageSizeKB).append("KB.")
@@ -526,14 +557,12 @@ public class Peer implements TestInterface {
 
     @Override
     public String toString() {
-        return
-                "Peer id: " + this.id + "\n" +
-                        "Service access point: " + this.accessPoint + "\n";
+        return "Peer id (and access point): peer" + this.id + "\n";
     }
 
     private static void usage() {
         System.err.println("Usage: java\n" +
-                "\tProj1 <peer id> <service access point>\n" +
+                "\tProj1 <peer id>\n" +
                 "\t<ip address> <port>");
         System.exit(1);
     }
@@ -559,7 +588,6 @@ public class Peer implements TestInterface {
             finalProg.cleanup();
         }));
 
-        prog.handlePendingTasks();
         // In this function we are verifying the modified files :). Hope your day is going as intended. Bye <3
         prog.verifyModifiedFiles();
 
@@ -569,15 +597,8 @@ public class Peer implements TestInterface {
 
         try {
             stub = (TestInterface) UnicastRemoteObject.exportObject(prog, 0);
-            String[] rmiinfoSplit = prog.getAccessPointName().split(":");
-            prog.rmiName = rmiinfoSplit[0];
-
-            if (rmiinfoSplit.length > 1)
-                prog.registry = LocateRegistry.getRegistry("localhost", Integer.parseInt(rmiinfoSplit[1]));
-            else
-                prog.registry = LocateRegistry.getRegistry();
-
-            prog.registry.bind(prog.rmiName, stub);
+            prog.registry = LocateRegistry.getRegistry();
+            prog.registry.bind(("peer" + prog.id), stub);
         } catch (Exception e) {
             System.err.println("Failed setting up the access point for use by the testing app.");
             System.exit(1);

@@ -1,8 +1,12 @@
 package chord;
 
+import utils.Pair;
+
 import java.net.InetAddress;
 import java.rmi.Remote;
 import java.rmi.RemoteException;
+import java.util.List;
+import java.util.Map;
 
 public interface ChordInterface extends Remote {
     int getId() throws RemoteException;
@@ -13,8 +17,10 @@ public interface ChordInterface extends Remote {
     ChordInterface findPredecessor(int id) throws RemoteException;
     ChordInterface closestPrecedingFinger(int id) throws RemoteException;
 
+
     void notify(ChordInterface n) throws RemoteException;
 
     InetAddress getAddress() throws RemoteException;
     int getPort() throws RemoteException;
+    Map<Pair<String, Integer>, Integer> getStoredChunksIds() throws RemoteException;
 }

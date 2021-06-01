@@ -1,19 +1,13 @@
 package message;
 
+import java.net.InetAddress;
+
 public class GetChunkMsg extends Message {
     public static final String type = "GETCHUNK";
-    private final String fileId;
     private final Integer chunkNo;
 
-    public GetChunkMsg(String version, String id, String fileId, int chunkNo) {
-        super(version, id, fileId);
-        this.header = version + " " +
-                type + " " +
-                id + " " +
-                fileId + " " +
-                chunkNo + " " +
-                Message.CRLF + Message.CRLF;
-        this.fileId = fileId;
+    public GetChunkMsg(String fileId, int chunkNo, InetAddress sourceDest, int sourcePort, Integer destId)  {
+        super(fileId, sourceDest, sourcePort, destId);
         this.chunkNo = chunkNo;
     }
 
@@ -26,22 +20,12 @@ public class GetChunkMsg extends Message {
     }
 
     @Override
-    public byte[] getContent() {
-        return header.getBytes();
-    }
-
-    @Override
     public String getType() {
         return type;
     }
 
     @Override
-    public int getHeaderLen() {
-        return 5;
-    }
-
-    @Override
     public String toString() {
-        return type + " " + this.fileId + " chunkno. " + this.chunkNo + " from " + super.id;
+        return super.toString() + (Message.DEBUG_MODE ? " FileId: " + fileId + " ChunkNo:" + chunkNo : "");
     }
 }
