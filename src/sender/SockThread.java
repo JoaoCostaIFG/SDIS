@@ -269,15 +269,6 @@ public class SockThread implements Runnable {
     }
 
     private void acceptCon(SelectionKey key) {
-        SocketChannel socketChannel;
-        try {
-            socketChannel = ((ServerSocketChannel) key.channel()).accept();
-            socketChannel.configureBlocking(false);
-        } catch (IOException e) {
-            System.err.println("Timed out while waiting for answer (Sock thread) " + this);
-            return;
-        }
-
         // create SSLEngine
         SSLEngine engine = this.sslc.createSSLEngine();
         engine.setUseClientMode(false);
@@ -285,11 +276,14 @@ public class SockThread implements Runnable {
         // create buffers
         ByteBuffer[] bufs = this.createBuffers(engine);
 
+        SocketChannel socketChannel;
         try {
+            socketChannel = ((ServerSocketChannel) key.channel()).accept();
+            socketChannel.configureBlocking(false);
             socketChannel.register(this.selector, SelectionKey.OP_READ,
                     new SSLEngineData(engine, bufs[0], bufs[1], bufs[2], bufs[3], true));
-        } catch (ClosedChannelException e) {
-            e.printStackTrace();
+        } catch (IOException e) {
+            System.err.println("Timed out while waiting for answer (Sock thread) " + this);
             return;
         }
 
@@ -345,13 +339,10 @@ public class SockThread implements Runnable {
                             bis.close();
 
                             // handle message
-                            System.out.println("\tRECEIVED: " + msg);
-                            /*
                             this.threadPool.execute(
                                     () -> {
                                         this.observer.handle(msg);
                                     });
-                             */
                         }
                     } catch (IOException | ClassNotFoundException e) {
                         e.printStackTrace();
@@ -483,8 +474,10 @@ public class SockThread implements Runnable {
             return;
         }
 
+        // TODO
+        // IMP keep this here because there's a race condition involving the server selector
         try {
-            Thread.sleep(600);
+            Thread.sleep(65);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
