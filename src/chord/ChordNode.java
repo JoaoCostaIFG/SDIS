@@ -384,6 +384,7 @@ public class ChordNode implements ChordInterface, Observer {
 
     public void stop() {
         this.sock.interrupt();
+        this.sock.close();
     }
 
     public boolean messageIsForUs(Message message) {
