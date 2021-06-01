@@ -12,7 +12,7 @@ import java.util.List;
 public abstract class Message implements Serializable {
     public static final String type = "FILEMESSAGE";
     public static final String CRLF = "END";
-    public static final boolean DEBUG_MODE = false;
+    public static final boolean DEBUG_MODE = true;
 
     protected String header;
     protected String version;

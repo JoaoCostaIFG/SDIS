@@ -199,6 +199,14 @@ public class State implements Serializable {
         this.succChunks = map;
     }
 
+    public void clearSuccChunks() {
+        this.succChunks.clear();
+    }
+
+    public boolean hasSuccChunks() {
+        return this.succChunks.size() != 0;
+    }
+
     public Map<Pair<String, Integer>, Integer> getSuccChunksIds() {
         return this.succChunks;
     }

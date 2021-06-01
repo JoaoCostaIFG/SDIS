@@ -72,7 +72,7 @@ public class Peer implements TestInterface {
                         }
                     }
                 },
-                100,
+                1,
                 100
         );
 
@@ -87,7 +87,7 @@ public class Peer implements TestInterface {
                         }
                     }
                 },
-                100,
+                23,
                 100
         );
 
@@ -102,7 +102,7 @@ public class Peer implements TestInterface {
                         }
                     }
                 },
-                100,
+                103,
                 100
         );
     }
@@ -213,8 +213,8 @@ public class Peer implements TestInterface {
         do {
             cmd = scanner.nextLine();
             System.out.println("CMD: " + cmd);
-            // String filePath = "../test_files/filename.txt";
-            String filePath = "../test_files/64k.txt";
+            String filePath = "../test_files/filename.txt";
+            //String filePath = "../test_files/64k.txt";
             if (cmd.equalsIgnoreCase("join")) {
                 try {
                     System.out.println(this.join());
@@ -436,8 +436,7 @@ public class Peer implements TestInterface {
                     State.st.setAmStoringChunk(fileId, chunkNo, -1);
                     currentCap -= chunkSize;
                     // Send Removed message to the responsible of the chunk
-                    this.chordNode.send(new RemovedMsg(fileId, chunkNo, this.address, this.port, chunkId,
-                            chunkId, false));
+                    this.chordNode.send(new RemovedMsg(fileId, chunkNo, chunkId, chunkId, false));
 
                     // Send Removed message to our predecessor so that it updates the chunks that it thinks we store
                     RemovedMsg predMsg = new RemovedMsg(fileId, chunkNo, this.address, this.port, chunkId,
