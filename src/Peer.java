@@ -1,13 +1,15 @@
 import chord.ChordInterface;
 import chord.ChordNode;
 import file.DigestFile;
-import message.*;
+import message.DeleteMsg;
+import message.GetChunkMsg;
+import message.PutChunkMsg;
+import message.RemovedMsg;
 import state.FileInfo;
 import state.State;
 
 import java.io.IOException;
 import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.rmi.NotBoundException;
@@ -78,7 +80,11 @@ public class Peer implements TestInterface {
                 new java.util.TimerTask() {
                     @Override
                     public void run() {
-                        chordNode.fixFingers();
+                        try {
+                            chordNode.fixFingers();
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
                     }
                 },
                 100,
@@ -89,7 +95,11 @@ public class Peer implements TestInterface {
                 new java.util.TimerTask() {
                     @Override
                     public void run() {
-                        chordNode.checkPredecessor();
+                        try {
+                            chordNode.checkPredecessor();
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
                     }
                 },
                 100,
@@ -215,7 +225,10 @@ public class Peer implements TestInterface {
                 System.out.println(this.chordNode);
             } else if (cmd.startsWith("backup")) {
                 String[] opts = cmd.split(" ");
-                if (opts.length != 2) { System.out.println("Usage: backup repdegree"); continue; }
+                if (opts.length != 2) {
+                    System.out.println("Usage: backup repdegree");
+                    continue;
+                }
                 try {
                     this.backup(filePath, Integer.parseInt(opts[1]));
                 } catch (RemoteException e) {
@@ -223,7 +236,10 @@ public class Peer implements TestInterface {
                 }
             } else if (cmd.startsWith("reclaim")) {
                 String[] opts = cmd.split(" ");
-                if (opts.length != 2) { System.out.println("Usage: reclaim size"); continue; }
+                if (opts.length != 2) {
+                    System.out.println("Usage: reclaim size");
+                    continue;
+                }
                 try {
                     this.reclaim(Integer.parseInt(opts[1]));
                 } catch (RemoteException e) {
@@ -248,7 +264,7 @@ public class Peer implements TestInterface {
                     e.printStackTrace();
                 }
             }
-    } while (!cmd.equalsIgnoreCase("EXIT"));
+        } while (!cmd.equalsIgnoreCase("EXIT"));
 
         // shush threads
         this.chordNode.stop();
@@ -280,6 +296,7 @@ public class Peer implements TestInterface {
         this.handlePendingTasks();
         return "Join success";
     }
+
     @Override
     public String backup(String filePath, Integer replicationDegree) throws RemoteException {
         String[] task = new String[]{"BACKUP", filePath, replicationDegree.toString()};
@@ -536,7 +553,7 @@ public class Peer implements TestInterface {
                         chunksIStore.append("\t\tDesired replication degree: ").append(fileInfo.getDesiredRep()).append("\n");
                     }
                 }
-                for (var entry2: State.st.getSuccChunksIds().entrySet())
+                for (var entry2 : State.st.getSuccChunksIds().entrySet())
                     chunksSuccIsStoring.append("\tFileId: ").append(entry2.getKey().p1)
                             .append(" ChunkNo: ").append(entry2.getKey().p2)
                             .append(" ChunkId: ").append(entry2.getValue()).append("\n");
