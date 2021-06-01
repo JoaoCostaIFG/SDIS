@@ -282,16 +282,15 @@ public class Peer implements TestInterface {
         }
         if (peerId == null)
             return "Couldn't find a node to join the network with";
-        System.out.println(peerId);
 
         ChordInterface node;
         try {
-            System.out.println(peerId);
             node = (ChordInterface) this.registry.lookup(peerId);
         } catch (NotBoundException e) {
             return "An attempted lookup to a node in the network failed";
         }
         this.chordNode.join(node);
+        System.out.println("Joined peer with id " + peerId);
         // Resume pending tasks
         this.handlePendingTasks();
         return "Join success";
@@ -325,7 +324,7 @@ public class Peer implements TestInterface {
         }
 
         for (int i = 0; i < chunks.size(); ++i) {
-            int destId = DigestFile.getId(chunks.get(i));
+            int destId = DigestFile.getId(fileId, i);
             this.chordNode.send(new PutChunkMsg(fileId, i, chunks.get(i),
                     replicationDegree, this.address, this.port, destId));
         }
@@ -365,16 +364,8 @@ public class Peer implements TestInterface {
             promisedChunks.add(fut);
             this.chordNode.addChunkFuture(fileId, currChunk, fut);
 
-            // Read chunk to get its id TODO Enhance this
-            byte[] c = null;
-            try {
-                c = DigestFile.divideFileChunk(filePath, 1);
-                fileId = DigestFile.getHash(filePath);
-            } catch (IOException e) {
-                System.err.println(filePath + " not found");
-            }
             // Send getchunk message
-            int destId = DigestFile.getId(c);
+            int destId = DigestFile.getId(fileId, currChunk);
             this.chordNode.send(new GetChunkMsg(fileId, currChunk, this.address, this.port, destId));
         }
 
@@ -384,6 +375,7 @@ public class Peer implements TestInterface {
             try {
                 byte[] chunk = fut.get();
                 if (chunk == null) { // Getchunk passed through everyone and didn't work
+                    this.chordNode.removeAllChunkFuture(fileId); // clean up all promises (we won't need them)
                     State.st.rmTask(task);
                     throw new RemoteException("Couldn't get chunk " + currChunk);
                 }
@@ -438,15 +430,7 @@ public class Peer implements TestInterface {
                 boolean isStored = chunkEntry.getValue().p2 != -1;
                 if (isStored) {
                     // if we have the chunk stored => delete it && decrement perceived rep.
-                    byte[] chunk;
-                    // Get chunk and its id
-                    int chunkId;
-                    try {
-                        chunk = DigestFile.readChunk(fileId, chunkNo);
-                        chunkId = DigestFile.getId(chunk);
-                    } catch (IOException e) {
-                        throw new RemoteException("Couldn't find supposed stored chunk " + fileId + " " + chunkNo);
-                    }
+                    int chunkId = DigestFile.getId(fileId, chunkNo);
                     // Delete the chunk and update state
                     long chunkSize = DigestFile.deleteChunk(fileId, chunkNo); // updates state capacity
                     State.st.setAmStoringChunk(fileId, chunkNo, -1);
@@ -553,11 +537,12 @@ public class Peer implements TestInterface {
                         chunksIStore.append("\t\tDesired replication degree: ").append(fileInfo.getDesiredRep()).append("\n");
                     }
                 }
-                for (var entry2 : State.st.getSuccChunksIds().entrySet())
-                    chunksSuccIsStoring.append("\tFileId: ").append(entry2.getKey().p1)
-                            .append(" ChunkNo: ").append(entry2.getKey().p2)
-                            .append(" ChunkId: ").append(entry2.getValue()).append("\n");
             }
+
+            for (var entry2: State.st.getSuccChunksIds().entrySet())
+                chunksSuccIsStoring.append("\tFileId: ").append(entry2.getKey().p1)
+                        .append(" ChunkNo: ").append(entry2.getKey().p2)
+                        .append(" ChunkId: ").append(entry2.getValue()).append("\n");
 
             maxStorageSizeKB = State.st.getMaxDiskSpaceKB();
             filledB = State.st.getFilledStorageB();

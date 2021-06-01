@@ -196,7 +196,6 @@ public class State implements Serializable {
     }
 
     public void replaceSuccChunk(Map<Pair<String, Integer>, Integer> map) {
-        this.succChunks.clear();
         this.succChunks = map;
     }
 

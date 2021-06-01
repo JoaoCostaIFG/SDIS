@@ -155,8 +155,7 @@ public class ChordNode implements ChordInterface, Observer {
     private void reconcile(ChordInterface succ) throws RemoteException {
         ChordInterface[] succSuccessors = succ.getSuccessors();
         this.succList[0] = succ;
-        for (int i = 1; i < this.succList.length; ++i)
-            this.succList[i] = succSuccessors[i - 1];
+        System.arraycopy(succSuccessors, 0, this.succList, 1, this.succList.length - 1);
     }
 
     /**
@@ -368,10 +367,13 @@ public class ChordNode implements ChordInterface, Observer {
 
     private void backupSuccessorChunks() {
         System.out.println("\tMy succ died");
-        for (var entry : State.st.getSuccChunksIds().entrySet()) {
-            String fileId = entry.getKey().p1;
-            Integer chunkNo = entry.getKey().p2, chunkId = entry.getValue();
-            this.send(new PutChunkMsg(fileId, chunkNo, this.address, this.port, chunkId));
+
+        synchronized (State.st) {
+            for (var entry : State.st.getSuccChunksIds().entrySet()) {
+                String fileId = entry.getKey().p1;
+                Integer chunkNo = entry.getKey().p2, chunkId = entry.getValue();
+                this.send(new PutChunkMsg(fileId, chunkNo, this.address, this.port, chunkId));
+            }
         }
     }
 
@@ -401,7 +403,7 @@ public class ChordNode implements ChordInterface, Observer {
         try {
             nextHopDest = closestPrecedingNode(message.getDestId());
         } catch (RemoteException e) {
-            System.err.println("Could not find successor for message " + message);
+            System.err.println("Could not find successor for message " + message + ". Message not sent.");
             e.printStackTrace();
         }
         assert nextHopDest != null;
@@ -436,12 +438,13 @@ public class ChordNode implements ChordInterface, Observer {
             System.out.println("\tNot sending message (its for me): " + message + "\n");
             messageHandler.handleMessage(message);
         } else { // message isn't for us
-            System.out.println("Sending: " + message + "\n");
+            System.out.println("Sending (ReHopping): " + message + "\n");
             this.sendToNode(message); // resend it through the chord ring
         }
     }
 
     public void sendDirectly(Message message, InetAddress address, int port) {
+        System.out.println("Sending Directly: " + message + "\n");
         message.setDest(address, port);
         // We don't need the chord ring to hop to the dest so we set it to null
         message.setDestId(null);
@@ -482,6 +485,10 @@ public class ChordNode implements ChordInterface, Observer {
 
     public void addChunkFuture(String fileId, int currChunk, CompletableFuture<byte[]> fut) {
         this.messageHandler.addChunkFuture(fileId, currChunk, fut);
+    }
+
+    public void removeAllChunkFuture(String fileId) {
+        this.messageHandler.removeAllChunkFuture(fileId);
     }
 
     @Override
