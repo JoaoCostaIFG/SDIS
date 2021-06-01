@@ -268,10 +268,12 @@ public class ChordNode implements ChordInterface, Observer {
 
     private void backupSuccessorChunks() {
         System.out.println("\tMy succ died");
-        for (var entry: State.st.getSuccChunksIds().entrySet()) {
-            String fileId = entry.getKey().p1;
-            Integer chunkNo = entry.getKey().p2, chunkId = entry.getValue();
-            this.send(new PutChunkMsg(fileId, chunkNo, this.address, this.port, chunkId));
+        synchronized (State.st) {
+            for (var entry: State.st.getSuccChunksIds().entrySet()) {
+                String fileId = entry.getKey().p1;
+                Integer chunkNo = entry.getKey().p2, chunkId = entry.getValue();
+                this.send(new PutChunkMsg(fileId, chunkNo, this.address, this.port, chunkId));
+            }
         }
     }
 

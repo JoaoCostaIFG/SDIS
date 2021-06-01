@@ -68,14 +68,14 @@ public class MessageHandler {
                          }
 
                          // Add sequence number
-                         chunkId = DigestFile.getId(message.getChunk());
+                         chunkId = DigestFile.getId(message.getFileId(), message.getChunkNo());
                          State.st.setAmStoringChunk(message.getFileId(), message.getChunkNo(), chunkId, message.getSeqNumber());
                          iStoredTheChunk = true;
                      }
                  } else {
                      if (message.reInitiateBackup()) reInitBackup = true;
                      // Update sequence number
-                     chunkId = DigestFile.getId(message.getChunk());
+                     chunkId = DigestFile.getId(message.getFileId(), message.getChunkNo());
                      State.st.setAmStoringChunk(message.getFileId(), message.getChunkNo(), message.getSeqNumber());
                      iStoredTheChunk = true;
                  }
@@ -231,7 +231,8 @@ public class MessageHandler {
 
         if (isInitiator || isStoringChunk) { // If we have the file that got deleted
             // We don't give the source so that the responsible node for this chunk fills it when it receives the msg
-            this.chordNode.send(new PutChunkMsg(message.getFileId(), message.getChunkNo(), c, replication, DigestFile.getId(c)));
+            int chunkId = DigestFile.getId(message.getFileId(), message.getChunkNo());
+            this.chordNode.send(new PutChunkMsg(message.getFileId(), message.getChunkNo(), c, replication, chunkId));
         } else {
             // Resend to next node in ring
             try {

@@ -81,10 +81,10 @@ public class DigestFile {
     }
 
     /* returns id of a chunk */
-    public static int getId(byte[] chunk) {
+    public static int getId(String fileId, int i) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-1");
-            byte[] hash = digest.digest(chunk);
+            byte[] hash = digest.digest((fileId + String.valueOf(i)).getBytes(StandardCharsets.US_ASCII));
             ByteBuffer wrapped = ByteBuffer.wrap(hash);
             int div = (int) Math.floor(pow(2, ChordNode.m));
             return Math.floorMod(wrapped.getInt(), div);
