@@ -1,5 +1,6 @@
 package message;
 
+import chord.ChordController;
 import chord.ChordInterface;
 import chord.ChordNode;
 
@@ -75,7 +76,7 @@ public abstract class Message implements Serializable {
         this.setDest(nextHopDest.getAddress(), nextHopDest.getPort());
     }
 
-    public void setSource(ChordNode node) {
+    public void setSource(ChordController node) {
         this.sourceAddress = node.getAddress();
         this.sourcePort = node.getPort();
     }

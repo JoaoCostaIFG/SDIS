@@ -1,18 +1,13 @@
 package sender;
 
-import chord.ChordNode;
+import chord.ChordController;
 import file.DigestFile;
 import message.*;
 import state.State;
 import utils.Pair;
 
-import javax.net.ssl.SSLServerSocketFactory;
-import javax.net.ssl.SSLSocket;
-import javax.net.ssl.SSLSocketFactory;
 import java.io.IOException;
 import java.net.InetAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
 import java.rmi.RemoteException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -20,13 +15,13 @@ import java.util.concurrent.ConcurrentMap;
 
 public class MessageHandler {
     // private final SockThread sock;
-    private final ChordNode chordNode;
+    private final ChordController controller;
     InetAddress address;
     Integer port;
     private final ConcurrentMap<Pair<String, Integer>, CompletableFuture<byte[]>> receivedChunks;
 
-    public MessageHandler(SockThread sock, ChordNode chordNode) {
-        this.chordNode = chordNode;
+    public MessageHandler(SockThread sock, ChordController chordController) {
+        this.controller = chordController;
         this.receivedChunks = new ConcurrentHashMap<>();
         this.address = sock.getAddress();
         this.port = sock.getPort();
@@ -44,7 +39,7 @@ public class MessageHandler {
 
     private void handleMsg(PutChunkMsg message) {
         if (message.hasNoSource()) // We are responsible for this message, mark us as responsible
-            message.setSource(this.chordNode);
+            message.setSource(this.controller);
 
         if (this.messageSentByUs(message) && message.destAddrKnown()) {
             System.out.println("\t\tMessage looped through network " + message);
@@ -55,8 +50,9 @@ public class MessageHandler {
         int chunkId = -1;
         synchronized (State.st) {
             // always register the existence of this file except when we want to reinit backup protocol
-            State.st.declareChunk(message.getFileId(), message.getChunkNo());
             State.st.addFileEntry(message.getFileId(), message.getReplication());
+            State.st.declareChunk(message.getFileId(), message.getChunkNo());
+            System.out.println("ADDING " + message.getReplication());
             isInitiator = State.st.isInitiator(message.getFileId());
             if (!isInitiator) {
                  // do not store duplicated chunks or if we surpass storage space
@@ -87,7 +83,7 @@ public class MessageHandler {
         // I am responsible and i stored the message
         if (iStoredTheChunk && message.getSeqNumber() == message.getReplication()) {
             System.out.println("I am responsible for chunk " + message.getFileId() + " " + message.getChunkNo());
-            message.setSource(this.chordNode);
+            message.setSource(this.controller);
         }
 
         // send STORED reply message to our predecessor if we stored the chunk/already had it
@@ -96,13 +92,13 @@ public class MessageHandler {
                     message.getChunkNo(), chunkId);
             InetAddress address; int port;
             try {
-                address = this.chordNode.getPredecessor().getAddress();
-                port = this.chordNode.getPredecessor().getPort();
+                address = this.controller.getChordNode().getPredecessor().getAddress();
+                port = this.controller.getChordNode().getPredecessor().getPort();
             } catch (RemoteException | NullPointerException e) {
                 System.err.println("Couldn't find predecessor to send him a STORED reply");
                 return;
             }
-            this.chordNode.sendDirectly(response, address, port);
+            this.controller.sendDirectly(response, address, port);
             message.decreaseCurrentRep(); // Update current rep in putchunk chain
         }
 
@@ -110,7 +106,7 @@ public class MessageHandler {
         if (message.getSeqNumber() == 0) // We don't need to resend the putchunk message further, we are last in the chain
             return;
 
-        this.chordNode.sendToSucc(message);
+        this.controller.sendToSucc(message);
     }
 
     private void handleMsg(StoredMsg message) {
@@ -136,11 +132,7 @@ public class MessageHandler {
             State.st.removeSuccChunk(message.getFileId());
         }
 
-        try {
-            this.chordNode.sendDirectly(message, chordNode.getSuccessor());
-        } catch (RemoteException e) {
-            System.err.println("Couldn't pass " + message + " to my successor");
-        }
+        this.controller.sendToSucc(message);
     }
 
     private void handleMsg(GetChunkMsg message) {
@@ -156,25 +148,19 @@ public class MessageHandler {
         synchronized (State.st) {
             if (!State.st.amIStoringChunk(message.getFileId(), message.getChunkNo())) {
                 // Resend to next node in ring
-                try {
-                    this.chordNode.sendDirectly(message, chordNode.getSuccessor());
-                } catch (RemoteException e) {
-                    System.err.println("Couldn't pass " + message + " to my successor");
-                    return;
-                }
-
+                this.controller.sendToSucc(message);
                 return;
             }
         }
 
         ChunkMsg response = new ChunkMsg(message.getFileId(), message.getChunkNo(), this.address, this.port, null);
-        response.setSource(this.chordNode);
-        this.chordNode.sendDirectly(response, message.getSourceAddress(), message.getSourcePort());
+        response.setSource(this.controller);
+        this.controller.sendDirectly(response, message.getSourceAddress(), message.getSourcePort());
     }
 
     private void handleMsg(RemovedMsg message) {
         if (message.hasNoSource()) // We are responsible for this message, mark us as responsible
-            message.setSource(this.chordNode);
+            message.setSource(this.controller);
 
         if (this.messageSentByUs(message) && message.destAddrKnown()) {
             System.out.println("\t\tMessage looped through network " + message);
@@ -217,20 +203,16 @@ public class MessageHandler {
         if (isInitiator || isStoringChunk) { // If we have the file that got deleted
             // We don't give the source so that the responsible node for this chunk fills it when it receives the msg
             int chunkId = DigestFile.getId(message.getFileId(), message.getChunkNo());
-            this.chordNode.send(new PutChunkMsg(message.getFileId(), message.getChunkNo(), c, replication, chunkId));
+            this.controller.send(new PutChunkMsg(message.getFileId(), message.getChunkNo(), c, replication, chunkId));
         } else {
             // Resend to next node in ring
-            try {
-                this.chordNode.sendDirectly(message, chordNode.getSuccessor());
-            } catch (RemoteException e) {
-                System.err.println("Couldn't pass " + message + " to my successor");
-            }
+            this.controller.sendToSucc(message);
         }
     }
 
     private boolean messageSentByUs(Message message) {
-        return (message.getSourcePort() == this.chordNode.getPort() &&
-                message.getSourceAddress().equals(this.chordNode.getAddress()) &&
+        return (message.getSourcePort() == this.controller.getPort() &&
+                message.getSourceAddress().equals(this.controller.getAddress()) &&
                 message.destAddrKnown());
     }
 

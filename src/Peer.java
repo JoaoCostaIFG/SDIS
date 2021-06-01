@@ -1,5 +1,5 @@
+import chord.ChordController;
 import chord.ChordInterface;
-import chord.ChordNode;
 import file.DigestFile;
 import message.DeleteMsg;
 import message.GetChunkMsg;
@@ -27,7 +27,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 
 public class Peer implements TestInterface {
-    private ChordNode chordNode;
+    private ChordController chordController;
     private boolean closed = false;
     // cmd line arguments
     private final String id;
@@ -58,15 +58,15 @@ public class Peer implements TestInterface {
     }
 
     private void initCoordNode() throws IOException {
-        this.chordNode = new ChordNode(address, port, registry);
-        ChordNode chordNode = this.chordNode;
+        this.chordController = new ChordController(address, port, registry);
+        ChordController chordNode = this.chordController;
 
         new java.util.Timer().scheduleAtFixedRate(
                 new java.util.TimerTask() {
                     @Override
                     public void run() {
                         try {
-                            chordNode.stabilize();
+                            chordNode.getChordNode().stabilize();
                         } catch (RemoteException e) {
                             e.printStackTrace();
                         }
@@ -81,7 +81,7 @@ public class Peer implements TestInterface {
                     @Override
                     public void run() {
                         try {
-                            chordNode.fixFingers();
+                            chordNode.getChordNode().stabilize();
                         } catch (Exception e) {
                             e.printStackTrace();
                         }
@@ -96,7 +96,7 @@ public class Peer implements TestInterface {
                     @Override
                     public void run() {
                         try {
-                            chordNode.checkPredecessor();
+                            chordNode.getChordNode().checkPredecessor();
                         } catch (Exception e) {
                             e.printStackTrace();
                         }
@@ -181,13 +181,13 @@ public class Peer implements TestInterface {
         // cleanup the access point
         if (registry != null) {
             try {
-                if (this.chordNode != null) // Chord node might not be initiated yet
-                    registry.unbind(String.valueOf(chordNode.getId()));
+                if (this.chordController != null) // Chord node might not be initiated yet
+                    registry.unbind(String.valueOf(chordController.getId()));
             } catch (RemoteException | NotBoundException e) {
                 System.err.println("Failed to unregister our chordNode from the RMI service.");
             }
             try {
-                assert chordNode != null;
+                assert chordController != null;
                 registry.unbind("peer" + this.id);
             } catch (RemoteException | NotBoundException e) {
                 System.err.println("Failed to unregister our Peer instance from the RMI service.");
@@ -207,7 +207,7 @@ public class Peer implements TestInterface {
     }
 
     private void mainLoop() {
-        this.chordNode.start();
+        this.chordController.start();
         Scanner scanner = new Scanner(System.in);
         String cmd;
         do {
@@ -222,7 +222,7 @@ public class Peer implements TestInterface {
                     e.printStackTrace();
                 }
             } else if (cmd.equalsIgnoreCase("st")) {
-                System.out.println(this.chordNode);
+                System.out.println(this.chordController);
             } else if (cmd.startsWith("backup")) {
                 String[] opts = cmd.split(" ");
                 if (opts.length != 2) {
@@ -267,7 +267,7 @@ public class Peer implements TestInterface {
         } while (!cmd.equalsIgnoreCase("EXIT"));
 
         // shush threads
-        this.chordNode.stop();
+        this.chordController.stop();
     }
 
     /* used by the TestApp (RMI) */
@@ -276,7 +276,7 @@ public class Peer implements TestInterface {
         String[] l = this.registry.list();
         String peerId = null;
         for (var e : l) {
-            if (!e.startsWith("peer") && !e.equals(String.valueOf(chordNode.getId()))) {
+            if (!e.startsWith("peer") && !e.equals(String.valueOf(chordController.getId()))) {
                 peerId = e;
             }
         }
@@ -289,7 +289,7 @@ public class Peer implements TestInterface {
         } catch (NotBoundException e) {
             return "An attempted lookup to a node in the network failed";
         }
-        this.chordNode.join(node);
+        this.chordController.join(node);
         System.out.println("Joined peer with id " + peerId);
         // Resume pending tasks
         this.handlePendingTasks();
@@ -325,7 +325,7 @@ public class Peer implements TestInterface {
 
         for (int i = 0; i < chunks.size(); ++i) {
             int destId = DigestFile.getId(fileId, i);
-            this.chordNode.send(new PutChunkMsg(fileId, i, chunks.get(i),
+            this.chordController.send(new PutChunkMsg(fileId, i, chunks.get(i),
                     replicationDegree, this.address, this.port, destId));
         }
 
@@ -362,11 +362,11 @@ public class Peer implements TestInterface {
             // Add future to node so that it notifies it
             CompletableFuture<byte[]> fut = new CompletableFuture<>();
             promisedChunks.add(fut);
-            this.chordNode.addChunkFuture(fileId, currChunk, fut);
+            this.chordController.addChunkFuture(fileId, currChunk, fut);
 
             // Send getchunk message
             int destId = DigestFile.getId(fileId, currChunk);
-            this.chordNode.send(new GetChunkMsg(fileId, currChunk, this.address, this.port, destId));
+            this.chordController.send(new GetChunkMsg(fileId, currChunk, this.address, this.port, destId));
         }
 
         List<byte[]> chunks = new ArrayList<>(chunkNo);
@@ -375,7 +375,7 @@ public class Peer implements TestInterface {
             try {
                 byte[] chunk = fut.get();
                 if (chunk == null) { // Getchunk passed through everyone and didn't work
-                    this.chordNode.removeAllChunkFuture(fileId); // clean up all promises (we won't need them)
+                    this.chordController.removeAllChunkFuture(fileId); // clean up all promises (we won't need them)
                     State.st.rmTask(task);
                     throw new RemoteException("Couldn't get chunk " + currChunk);
                 }
@@ -401,7 +401,7 @@ public class Peer implements TestInterface {
     public String deleteFromId(String fileId) {
         // we don't want the old entry anymore
         State.st.removeFileEntry(fileId);
-        this.chordNode.send(new DeleteMsg(fileId, this.chordNode.getAddress(), this.chordNode.getPort(), this.chordNode.getId()));
+        this.chordController.send(new DeleteMsg(fileId, this.chordController.getAddress(), this.chordController.getPort(), this.chordController.getId()));
         return "Success";
     }
 
@@ -428,6 +428,7 @@ public class Peer implements TestInterface {
             for (var chunkEntry : entry.getValue().getAllChunks().entrySet()) {
                 int chunkNo = chunkEntry.getKey();
                 boolean isStored = chunkEntry.getValue().p2 != -1;
+                System.out.println("?" + isStored + " " + chunkEntry.getValue().p2);
                 if (isStored) {
                     // if we have the chunk stored => delete it && decrement perceived rep.
                     int chunkId = DigestFile.getId(fileId, chunkNo);
@@ -436,19 +437,12 @@ public class Peer implements TestInterface {
                     State.st.setAmStoringChunk(fileId, chunkNo, -1);
                     currentCap -= chunkSize;
                     // Send Removed message to the responsible of the chunk
-                    this.chordNode.send(new RemovedMsg(fileId, chunkNo, chunkId, chunkId, false));
+                    this.chordController.send(new RemovedMsg(fileId, chunkNo, chunkId, chunkId, false));
 
                     // Send Removed message to our predecessor so that it updates the chunks that it thinks we store
                     RemovedMsg predMsg = new RemovedMsg(fileId, chunkNo, this.address, this.port, chunkId,
                             chunkId, true);
-                    try {
-                        this.chordNode.sendDirectly(predMsg, this.chordNode.getPredecessor());
-                    } catch (RemoteException e) {
-                        System.err.println("Couldn't send REMOVED message to predecessor");
-                        if (currentCap <= 0)
-                            break;
-                        continue;
-                    }
+                    this.chordController.sendToPred(predMsg);
                 }
 
                 if (currentCap <= 0)

@@ -5,7 +5,6 @@ import utils.Pair;
 import java.net.InetAddress;
 import java.rmi.Remote;
 import java.rmi.RemoteException;
-import java.util.List;
 import java.util.Map;
 
 public interface ChordInterface extends Remote {
