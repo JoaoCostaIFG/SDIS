@@ -16,10 +16,7 @@ import java.rmi.registry.Registry;
 import java.rmi.server.UnicastRemoteObject;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.sql.Time;
-import java.util.Map;
-import java.util.Timer;
-import java.util.TimerTask;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
 import static java.lang.Math.pow;
@@ -30,14 +27,14 @@ public class ChordNode implements ChordInterface, Observer {
     private final int port;
     private final ChordInterface[] fingerTable;
     private final MessageHandler messageHandler;
+    private final ChordInterface[] succList;
     private int nextFingerToFix;
     private ChordInterface predecessor;
     public Registry registry;
     private final SockThread sock;
 
     public static int m = 7; // Number of bits of the addressing space
-    private static int SUCC_TIMEOUT = 3000;
-    private static int MAX_TRIES = 3;
+    private static final int MAX_TRIES = 3;
 
     public ChordNode(InetAddress address, int port, Registry registry) throws IOException {
         this.address = address;
@@ -49,6 +46,7 @@ public class ChordNode implements ChordInterface, Observer {
         this.registry = registry;
         this.nextFingerToFix = 0;
         this.fingerTable = new ChordInterface[m];
+        this.succList = new ChordInterface[(int) Math.ceil(m / 3.0)];
 
         // init node as if he was the only one in the network
         this.predecessor = null;
@@ -88,16 +86,37 @@ public class ChordNode implements ChordInterface, Observer {
 
     @Override
     public ChordInterface getSuccessor() throws RemoteException {
-        return this.fingerTable[0];
+        boolean goneBad = false;
+
+        for (int i = 0; i < this.succList.length; ++i) {
+            ChordInterface succ = this.succList[i];
+            if (succ == null) break;
+
+            try {
+                succ.getId();
+                if (goneBad)
+                    this.reconcile(succ);
+                return succ;
+            } catch (RemoteException ignored) {
+                goneBad = true;
+                this.succList[i] = null; // node is dead => bye bye
+            }
+        }
+
+        return null;
+
+        // return this.fingerTable[0];
     }
 
     @Override
-    public Map<Pair<String, Integer>, Integer> getStoredChunksIds() throws RemoteException {
-        return State.st.getAllStoredChunksId();
+    public ChordInterface[] getSuccessors() throws RemoteException {
+        return this.succList;
     }
 
     private void setSuccessor(ChordInterface n) {
-        this.fingerTable[0] = n;
+        this.succList[0] = n;
+        this.fingerTable[0] = this.succList[0];
+
         Map<Pair<String, Integer>, Integer> succStoredChunksIds;
         try {
             succStoredChunksIds = n.getStoredChunksIds();
@@ -106,6 +125,13 @@ public class ChordNode implements ChordInterface, Observer {
             return;
         }
         State.st.replaceSuccChunk(succStoredChunksIds);
+
+        //this.fingerTable[0] = n;
+    }
+
+    @Override
+    public Map<Pair<String, Integer>, Integer> getStoredChunksIds() throws RemoteException {
+        return State.st.getAllStoredChunksId();
     }
 
     private int getFingerStartId(int i) {
@@ -117,12 +143,20 @@ public class ChordNode implements ChordInterface, Observer {
      */
     public void join(ChordInterface nprime) throws RemoteException {
         this.predecessor = null;
-        //this.setSuccessor(nprime.findSuccessor(this.getId()));
+        this.setSuccessor(nprime.findSuccessor(this.getId()));
 
+        // init finger table
         for (int i = 0; i < m; ++i) {
             int fingerStartId = this.getFingerStartId(i);
             this.fingerTable[i] = nprime.findSuccessor(fingerStartId);
         }
+    }
+
+    private void reconcile(ChordInterface succ) throws RemoteException {
+        ChordInterface[] succSuccessors = succ.getSuccessors();
+        this.succList[0] = succ;
+        for (int i = 1; i < this.succList.length; ++i)
+            this.succList[i] = succSuccessors[i - 1];
     }
 
     /**
@@ -131,18 +165,26 @@ public class ChordNode implements ChordInterface, Observer {
      * and tells the successor about it
      */
     public void stabilize() throws RemoteException {
-        // TODO try catch with list of succs
         // TODO stack trace no timer do stabilize para ver nos ctrl+c
 
+        // TODO if statement is needed?
+        //if (this.predecessor != null) {
+        //}
+
+        ChordInterface succ = this.getSuccessor();
+        if (succ == null) return; // very bad
+
         // update predecessor
-        if (this.predecessor != null) {
-            ChordInterface me$ = this.getSuccessor().getPredecessor();
-            if (me$ != null) { // if pred knows about a succ
-                if (ChordNode.inBetween(me$.getId(), this.id, this.getSuccessor().getId()))
-                    this.setSuccessor(me$);
+        ChordInterface me$ = succ.getPredecessor();
+        if (me$ != null) { // if pred knows about a succ
+            if (ChordNode.inBetween(me$.getId(), this.id, succ.getId())) {
+                this.setSuccessor(me$);
+                succ = me$;
             }
         }
-        this.getSuccessor().notify(this);
+        succ.notify(this); // notify successor about us
+
+        this.reconcile(succ);
     }
 
     /**
@@ -152,9 +194,17 @@ public class ChordNode implements ChordInterface, Observer {
     public void notify(ChordInterface nprime) throws RemoteException {
         int nprimeId = nprime.getId();
 
-        if (this.predecessor == null ||
-                ChordNode.inBetween(nprimeId, this.predecessor.getId(), this.id)) {
+        if (this.predecessor == null) {
             this.predecessor = nprime;
+        } else {
+            try {
+                int predecessorId = this.predecessor.getId();
+                if (ChordNode.inBetween(nprimeId, predecessorId, this.id))
+                    this.predecessor = nprime;
+            } catch (RemoteException ignored) {
+                // if our predecessor died, we accept the new one
+                this.predecessor = nprime;
+            }
         }
     }
 
@@ -167,9 +217,9 @@ public class ChordNode implements ChordInterface, Observer {
 
         int succId = this.getFingerStartId(nextFingerToFix);
         try {
-            //System.out.println("I am " + this.id + " and I'm updating finger " + nextFingerToFix + ", id: " + succId);
-            fingerTable[nextFingerToFix] = findSuccessor(succId);
-            //System.out.println("They tell me it's: " + fingerTable[nextFingerToFix].getId());
+            // System.out.println("I am " + this.id + " and I'm updating finger " + nextFingerToFix + ", id: " + succId);
+            fingerTable[nextFingerToFix] = this.findSuccessor(succId);
+            // System.out.println("They tell me it's: " + fingerTable[nextFingerToFix].getId());
         } catch (RemoteException e) {
             fingerTable[nextFingerToFix] = this;
             if (nextFingerToFix == 0) { // My successor died, call bakup protocol on the chunks i think he was storing
@@ -196,8 +246,51 @@ public class ChordNode implements ChordInterface, Observer {
         ChordInterface ret = this;
         while (!(ChordNode.inBetween(id, ret.getId(), ret.getSuccessor().getId(), false, true))) {
             // System.out.println(id + " E (" + ret.getId() + ", " + ret.getSuccessor().getId() + ")");
-            ret = ret.closestPrecedingFinger(id);
+            ret = ret.closestPrecedingNode(id);
         }
+        return ret;
+    }
+
+    private int dist(ChordInterface dst) throws RemoteException {
+        int dstId = dst.getId();
+        if (dstId >= this.id) return dstId - this.id;
+        return dstId + (int) Math.pow(2, m) - this.id;
+    }
+
+    // finger table + successor list order from farthest to closest
+    private List<ChordInterface> getFullTable() {
+        // dedup nodes
+        Set<ChordInterface> nodeSet = new HashSet<>();
+        for (ChordInterface n : this.fingerTable) {
+            if (n == null) continue;
+            try {
+                // test if is alive
+                n.getId();
+                nodeSet.add(n);
+            } catch (RemoteException ignored) {
+            }
+        }
+        for (ChordInterface n : this.succList) {
+            if (n == null) continue;
+            try {
+                // test if is alive
+                n.getId();
+                nodeSet.add(n);
+            } catch (RemoteException ignored) {
+            }
+        }
+
+        List<ChordInterface> ret = new ArrayList<>(nodeSet);
+        // TODO race condition
+        ret.sort((arg0, arg1) -> {
+            try {
+                return this.dist(arg1) - this.dist(arg0);
+            } catch (RemoteException e) {
+                e.printStackTrace();
+            }
+            return 0;
+        });
+
         return ret;
     }
 
@@ -205,15 +298,22 @@ public class ChordNode implements ChordInterface, Observer {
      * Search the local table for the highest predecessor of id
      */
     @Override
-    public ChordInterface closestPrecedingFinger(int id) throws RemoteException {
-        for (int i = m - 1; i >= 0; --i) {
-            if (fingerTable[i] != null) {
-                int succId = fingerTable[i].getId();
-                //System.out.println("\t" + succId + " E (" + this.id + ", " + id + ")");
-                if (ChordNode.inBetween(succId, this.id, id))
-                    return fingerTable[i];
+    public ChordInterface closestPrecedingNode(int id) throws RemoteException {
+        List<ChordInterface> nodes = this.getFullTable();
+
+        for (ChordInterface n : nodes) {
+            int succId;
+            try { // is up
+                succId = n.getId();
+            } catch (RemoteException e) {
+                continue;
             }
+
+            // is it is between us and them, it's the closest preceding node
+            if (ChordNode.inBetween(succId, this.id, id))
+                return n;
         }
+
         return this;
     }
 
@@ -268,7 +368,7 @@ public class ChordNode implements ChordInterface, Observer {
 
     private void backupSuccessorChunks() {
         System.out.println("\tMy succ died");
-        for (var entry: State.st.getSuccChunksIds().entrySet()) {
+        for (var entry : State.st.getSuccChunksIds().entrySet()) {
             String fileId = entry.getKey().p1;
             Integer chunkNo = entry.getKey().p2, chunkId = entry.getValue();
             this.send(new PutChunkMsg(fileId, chunkNo, this.address, this.port, chunkId));
@@ -299,7 +399,7 @@ public class ChordNode implements ChordInterface, Observer {
     private void sendToNode(Message message) {
         ChordInterface nextHopDest = null;
         try {
-            nextHopDest = closestPrecedingFinger(message.getDestId());
+            nextHopDest = closestPrecedingNode(message.getDestId());
         } catch (RemoteException e) {
             System.err.println("Could not find successor for message " + message);
             e.printStackTrace();
@@ -325,8 +425,7 @@ public class ChordNode implements ChordInterface, Observer {
         if (this.messageIsForUs(message)) {
             System.out.println("Handling\n");
             messageHandler.handleMessage(message);
-        }
-        else { // message isn't for us
+        } else { // message isn't for us
             System.out.println("Resending\n");
             this.sendToNode(message); // resend it through the chord ring
         }
@@ -336,8 +435,7 @@ public class ChordNode implements ChordInterface, Observer {
         if (this.messageIsForUs(message)) {
             System.out.println("\tNot sending message (its for me): " + message + "\n");
             messageHandler.handleMessage(message);
-        }
-        else { // message isn't for us
+        } else { // message isn't for us
             System.out.println("Sending: " + message + "\n");
             this.sendToNode(message); // resend it through the chord ring
         }
@@ -397,6 +495,22 @@ public class ChordNode implements ChordInterface, Observer {
                 res.append("Cant get to node\n");
             }
         }
+
+        res.append("Succ list:\n");
+        for (ChordInterface n : this.succList) {
+            res.append("\t");
+            if (n == null) {
+                res.append("null");
+            } else {
+                try {
+                    res.append(n.getId());
+                } catch (RemoteException e) {
+                    res.append("dead");
+                }
+            }
+            res.append("\n");
+        }
+
         try {
             res.append("Succ: ").append(this.getSuccessor().getId()).append("\n");
         } catch (RemoteException e) {

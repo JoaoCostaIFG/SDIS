@@ -13,9 +13,11 @@ public interface ChordInterface extends Remote {
     ChordInterface getPredecessor() throws RemoteException;
     ChordInterface getSuccessor() throws RemoteException;
 
+    ChordInterface[] getSuccessors() throws RemoteException;
+
     ChordInterface findSuccessor(int id) throws RemoteException;
     ChordInterface findPredecessor(int id) throws RemoteException;
-    ChordInterface closestPrecedingFinger(int id) throws RemoteException;
+    ChordInterface closestPrecedingNode(int id) throws RemoteException;
 
 
     void notify(ChordInterface n) throws RemoteException;

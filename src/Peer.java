@@ -66,6 +66,7 @@ public class Peer implements TestInterface {
                         try {
                             chordNode.stabilize();
                         } catch (RemoteException e) {
+                            e.printStackTrace();
                         }
                     }
                 },
