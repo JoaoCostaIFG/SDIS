@@ -46,8 +46,7 @@ public class MessageHandler {
         if (message.hasNoSource()) { // We are responsible for this message, mark us as responsible
             System.out.println("I am responsible for " + message);
             message.setSource(this.controller);
-        } else
-            System.out.println("RECEIVED FROM " + message);
+        }
 
         boolean iStoredTheChunk = false;
         int chunkId = -1;
@@ -143,7 +142,7 @@ public class MessageHandler {
     }
 
     private void handleMsg(GetChunkMsg message) {
-        if (message.destAddrKnown() && message.hasLooped()) {
+        if (message.destAddrKnown() && message.hasLooped() && this.messageSentByUs(message)) {
             System.out.println("\t\tMessage looped through network " + message);
             // Mark getchunk has unsuccessful
             var filePair = new Pair<>(message.getFileId(), message.getChunkNo());
@@ -163,11 +162,12 @@ public class MessageHandler {
         }
 
         if (message.destAddrKnown()) { // Sent to us
-            if (message.getResponsible() == this.controller.getId()) { // First time we are receiving the message
-                message.setResponsible(this.controller.getId());
-            } else { // The message has looped, send to source saying that the chunk isn't in the network
+            if (message.getResponsible() == -1) { // First time we are receiving the message
+                message.setResponsible(this.controller.getId()); // Set us as responsible
+            } else if(message.getResponsible() == this.controller.getId()) { // The message has looped, send to source saying that the chunk isn't in the network
                 message.setLooped();
                 this.controller.sendDirectly(message, message.getSourceAddress(), message.getSourcePort());
+                return;
             }
         }
 
@@ -176,13 +176,14 @@ public class MessageHandler {
     }
 
     private void handleMsg(RemovedMsg message) {
-        if (message.hasNoSource()) // We are responsible for this message, mark us as responsible
-            message.setSource(this.controller);
-
         if (this.messageSentByUs(message) && message.destAddrKnown()) {
             System.out.println("\t\tMessage looped through network " + message);
             return; // We sent this message and it has looped through the network
         }
+
+        if (message.hasNoSource()) // We are responsible for this message, mark us as responsible
+            message.setSource(this.controller);
+
 
         // Our successor told us to that he is no longer storing this chunk
         if (message.isToPredecessor()) {

@@ -9,8 +9,6 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.rmi.RemoteException;
 import java.rmi.registry.Registry;
-import java.util.Timer;
-import java.util.TimerTask;
 import java.util.concurrent.CompletableFuture;
 
 public class ChordController implements Observer {
@@ -19,8 +17,6 @@ public class ChordController implements Observer {
     private final MessageHandler messageHandler;
     private final SockThread sock;
     private final ChordNode chordNode;
-
-    private static final int MAX_TRIES = 3;
 
     public ChordController(InetAddress address, int port, Registry registry) throws IOException {
         this.address = address;
