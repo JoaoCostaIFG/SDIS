@@ -66,7 +66,8 @@ public class SockThread implements Runnable {
             sslCtx.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
             this.sslc = sslCtx;
         } catch (KeyStoreException | CertificateException | NoSuchAlgorithmException | IOException | UnrecoverableKeyException | KeyManagementException e) {
-            e.printStackTrace();
+            System.err.println("Failed setting up the SSLContext");
+            System.exit(1);
         }
 
         this.selector = SelectorProvider.provider().openSelector();
@@ -321,8 +322,7 @@ public class SockThread implements Runnable {
             try {
                 this.selector.select();
             } catch (IOException e) {
-                e.printStackTrace();
-                break;
+                continue;
             }
 
             Iterator<SelectionKey> selectedKeys = this.selector.selectedKeys().iterator();
@@ -491,8 +491,7 @@ public class SockThread implements Runnable {
             outputStream.writeObject(message);
             outputStream.flush();
             dataToSend = bos.toByteArray();
-        } catch (Exception e) {
-            e.printStackTrace();
+        } catch (Exception ignored) {
             return;
         }
 
@@ -502,23 +501,10 @@ public class SockThread implements Runnable {
         // TODO
         // IMP keep this here because there's a race condition involving the server selector
         try {
-            Thread.sleep(100);
+            Thread.sleep(300);
         } catch (InterruptedException e) {
-            e.printStackTrace();
+            return;
         }
-
-        /*
-        // Attempt at sending larger messages
-        int currInd = 0;
-        while (currInd < dataToSend.length) {
-            int capAvailable = d.myAppData.capacity();
-            if (capAvailable > dataToSend.length - currInd)
-                capAvailable = dataToSend.length - currInd;
-
-            .put(Arrays.copyOfRange(dataToSend, currInd, currInd + capAvailable))
-            currInd += capAvailable;
-        }
-         */
 
         d.myAppData.clear().put(dataToSend).flip();
         try {
@@ -531,51 +517,46 @@ public class SockThread implements Runnable {
         try {
             this.closeSSLConnectionClient(socketChannel, d);
         } catch (IOException e) {
-            e.printStackTrace();
+            System.err.println("Socket close wasn't orderly.");
         }
     }
 
     private void closeSSLConnectionServer(SocketChannel socketChannel, SSLEngineData d) throws IOException {
         d.engine.closeInbound();
 
-        // System.out.println("Closing outbound");
+        // closing outbound
         d.engine.closeOutbound();
         d.myAppData.clear().flip(); // empty buffer
         while (!d.engine.isOutboundDone()) {
             d.myNetData.clear();
             SSLEngineResult res = d.engine.wrap(d.myAppData, d.myNetData);
-
             // System.out.println("OUTBOUND " + res);
 
             d.myNetData.flip();
             while (d.myNetData.hasRemaining())
                 socketChannel.write(d.myNetData);
         }
-        // System.out.println("Closed outbound");
+        // closed outbound
 
-        // xau rossetta
         socketChannel.close();
-        // System.out.println("XAU SOCKET");
     }
 
     private void closeSSLConnectionClient(SocketChannel socketChannel, SSLEngineData d) throws IOException {
-        // System.out.println("Closing outbound");
+        // closing outbound
         d.engine.closeOutbound();
-        // send bye bye
         d.myAppData.clear().flip(); // empty buffer
         while (!d.engine.isOutboundDone()) {
             d.myNetData.clear();
             SSLEngineResult res = d.engine.wrap(d.myAppData, d.myNetData);
-
             //System.out.println("OUTBOUND " + res);
 
             d.myNetData.flip();
             while (d.myNetData.hasRemaining())
                 socketChannel.write(d.myNetData);
         }
-        // System.out.println("Closed outbound");
+        // closed outbound
 
-        // System.out.println("Waiting for closure");
+        // closing inbound
         int tries = 10;
         xau:
         while (true) {
@@ -600,17 +581,16 @@ public class SockThread implements Runnable {
             while (d.peerNetData.hasRemaining()) {
                 SSLEngineResult res = d.engine.unwrap(d.peerNetData, d.peerAppData);
                 //System.out.println("Closure: " + res);
+
                 if (res.getStatus() == SSLEngineResult.Status.CLOSED) {
                     d.engine.closeInbound();
                     break xau;
                 }
             }
         }
-        // System.out.println("Closed inbound");
+        // closed inbound
 
-        // xau rossetta
         socketChannel.close();
-        // System.out.println("XAU SOCKET");
     }
 
     private void closeSSLConnection(SocketChannel socketChannel, SSLEngineData d) throws IOException {
