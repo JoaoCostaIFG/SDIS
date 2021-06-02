@@ -7,10 +7,7 @@ import java.io.*;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.Selector;
-import java.nio.channels.ServerSocketChannel;
-import java.nio.channels.SocketChannel;
+import java.nio.channels.*;
 import java.nio.channels.spi.SelectorProvider;
 import java.security.*;
 import java.security.cert.CertificateException;
@@ -294,10 +291,16 @@ public class SockThread implements Runnable {
         try {
             socketChannel = ((ServerSocketChannel) key.channel()).accept();
             socketChannel.configureBlocking(false);
-            socketChannel.register(this.selector, SelectionKey.OP_READ,
-                    new SSLEngineData(engine, bufs[0], bufs[1], bufs[2], bufs[3], true));
         } catch (IOException e) {
             System.err.println("Timed out while waiting for answer (Sock thread) " + this);
+            return;
+        }
+
+        SSLEngineData d = new SSLEngineData(engine, bufs[0], bufs[1], bufs[2], bufs[3], true);
+        try {
+            socketChannel.register(this.selector, SelectionKey.OP_READ, d);
+        } catch (ClosedChannelException e) {
+            System.err.println("Failed to regiter.");
             return;
         }
 
@@ -305,14 +308,18 @@ public class SockThread implements Runnable {
             if (this.doHandshake(engine, socketChannel, bufs[1], bufs[3]) != 0) {
                 System.err.println("Handshake failed (accept con)");
                 socketChannel.close();
+                return;
             }
         } catch (Exception e) {
             System.err.println("Handshake failed (accept con)");
             try {
                 socketChannel.close();
             } catch (IOException ignored) {
+                return;
             }
         }
+
+        // this.readOuter(socketChannel, d);
     }
 
     @Override
@@ -335,41 +342,32 @@ public class SockThread implements Runnable {
                 if (key.isAcceptable()) {
                     this.acceptCon(key);
                 } else if (key.isReadable()) {
-                    try {
-                        SocketChannel socketChannel = (SocketChannel) key.channel();
-                        SSLEngineData d = (SSLEngineData) key.attachment();
+                    SocketChannel socketChannel = (SocketChannel) key.channel();
+                    SSLEngineData d = (SSLEngineData) key.attachment();
 
-                        boolean closingTime = this.read(socketChannel, d);
-
-                        // create message instance from the received bytes
-                        if (closingTime && d.content.size() > 0) {
-                            ByteArrayInputStream bis = new ByteArrayInputStream(d.content.toByteArray());
-                            d.content.reset();
-
-                            ObjectInput in = new ObjectInputStream(bis);
-                            Message msg = (Message) in.readObject();
-                            bis.close();
-
-                            // handle message
-                            this.receiveThreadPool.execute(() -> this.observer.handle(msg));
-                        }
-                    } catch (IOException | ClassNotFoundException ignored) {
-                    }
+                    this.readOuter(socketChannel, d);
                 }
             }
         }
     }
 
-    private void handleEndOfStream(SocketChannel socketChannel, SSLEngineData d) {
-        System.err.println("Got end of stream from peer. Attempting to close connection.");
+    private void readOuter(SocketChannel socketChannel, SSLEngineData d) {
         try {
-            d.engine.closeInbound();
-        } catch (SSLException e) {
-            System.err.println("Peer didn't follow the correct connection end procedure.");
-        }
-        try {
-            this.closeSSLConnection(socketChannel, d);
-        } catch (IOException ignored) {
+            boolean isClosed = this.read(socketChannel, d);
+
+            // create message instance from the received bytes
+            if (isClosed && d.content.size() > 0) {
+                ByteArrayInputStream bis = new ByteArrayInputStream(d.content.toByteArray());
+                d.content.reset();
+
+                ObjectInput in = new ObjectInputStream(bis);
+                Message msg = (Message) in.readObject();
+                bis.close();
+
+                // handle message
+                this.receiveThreadPool.execute(() -> this.observer.handle(msg));
+            }
+        } catch (IOException | ClassNotFoundException ignored) {
         }
     }
 
@@ -418,6 +416,19 @@ public class SockThread implements Runnable {
         }
 
         return false;
+    }
+
+    private void handleEndOfStream(SocketChannel socketChannel, SSLEngineData d) {
+        System.err.println("Got end of stream from peer. Attempting to close connection.");
+        try {
+            d.engine.closeInbound();
+        } catch (SSLException e) {
+            System.err.println("Peer didn't follow the correct connection end procedure.");
+        }
+        try {
+            this.closeSSLConnection(socketChannel, d);
+        } catch (IOException ignored) {
+        }
     }
 
     private void write(SocketChannel socketChannel, SSLEngineData d) throws IOException {
