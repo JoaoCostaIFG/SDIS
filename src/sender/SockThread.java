@@ -67,10 +67,10 @@ public class SockThread implements Runnable {
             System.exit(1);
         }
 
-        this.selector = SelectorProvider.provider().openSelector();
         this.serverSocketChannel = ServerSocketChannel.open();
         this.serverSocketChannel.configureBlocking(false);
         this.serverSocketChannel.socket().bind(new InetSocketAddress(address, port), MAX_CONNS);
+        this.selector = Selector.open();
         this.serverSocketChannel.register(this.selector, SelectionKey.OP_ACCEPT);
     }
 
@@ -510,10 +510,11 @@ public class SockThread implements Runnable {
         // send message
         SSLEngineData d = new SSLEngineData(engine, bufs[0], bufs[1], bufs[2], bufs[3], false);
 
-        // TODO
-        // IMP keep this here because there's a race condition involving the server selector
+        // IMP
+        // IMP keep this here because there's a race condition involving the server selector dectecting read operations
+        // this sleep simulates network delays (not present on localhost connections)
         try {
-            Thread.sleep(300);
+            Thread.sleep(500);
         } catch (InterruptedException e) {
             return;
         }
@@ -569,7 +570,7 @@ public class SockThread implements Runnable {
         // closed outbound
 
         // closing inbound
-        int tries = 10;
+        int tries = 20;
         xau:
         while (true) {
             d.peerNetData.clear();
