@@ -46,8 +46,7 @@ public class MessageHandler {
         if (message.hasNoSource()) { // We are responsible for this message, mark us as responsible
             System.out.println("I am responsible for " + message);
             message.setSource(this.controller);
-        } else
-            System.out.println("RECEIVED FROM " + message);
+        }
 
         boolean iStoredTheChunk = false;
         int chunkId = -1;

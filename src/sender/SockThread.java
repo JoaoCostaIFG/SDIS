@@ -345,10 +345,13 @@ public class SockThread implements Runnable {
                         SocketChannel socketChannel = (SocketChannel) key.channel();
                         SSLEngineData d = (SSLEngineData) key.attachment();
 
-                        d.thread.submit(() -> this.readOuter(key, socketChannel, d));
+                        try {
+                            d.thread.submit(() -> this.readOuter(key, socketChannel, d));
+                        } catch (RejectedExecutionException ignored) {
+                            key.cancel();
+                        }
                     }
-                } catch (RejectedExecutionException ignored) {
-                    key.cancel();
+                } catch (CancelledKeyException ignored) {
                 }
             }
         }
@@ -423,6 +426,8 @@ public class SockThread implements Runnable {
                 case CLOSED:
                     this.closeSSLConnection(socketChannel, d);
                     return true;
+                default:
+                    throw new IllegalStateException("Unexpected value: " + res.getStatus());
             }
         }
 
