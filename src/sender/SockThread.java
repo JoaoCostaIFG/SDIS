@@ -499,7 +499,6 @@ public class SockThread implements Runnable {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        System.out.println("Sent message" + message);
     }
 
     public void send(Message message) {

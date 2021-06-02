@@ -126,31 +126,11 @@ public class ChordController implements Observer {
     }
 
     public void sendToSucc(Message message) {
-        ChordNode node = this.chordNode;
-        ChordController controller = this;
-        Timer timer = new Timer();
-        TimerTask task = new java.util.TimerTask() {
-            private int count = 0;
-
-            @Override
-            public void run() {
-                try {
-                    controller.sendDirectly(message, node.getSuccessor());
-                    timer.cancel();
-                } catch (RemoteException e) {
-                    System.out.println("FAILED ONCE");
-                    ++count;
-                    if (count == MAX_TRIES)
-                        timer.cancel();
-                }
-            }
-        };
-
-        timer.scheduleAtFixedRate(
-                task,
-                100,
-                100
-        );
+        try {
+            this.sendDirectly(message, this.chordNode.getSuccessor());
+        } catch (RemoteException e) {
+            System.out.println("Could not get succ to send him " + message);
+        }
     }
 
     public void sendToPred(Message message) {

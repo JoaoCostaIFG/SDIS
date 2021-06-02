@@ -380,8 +380,8 @@ public class ChordNode implements ChordInterface {
     private void backupSuccessorChunks() {
         synchronized (State.st) {
             if (State.st.hasSuccChunks()) {
+                System.out.println("\tMy succ died");
                 for (var entry : State.st.getSuccChunksIds().entrySet()) {
-                    System.out.println("\tMy succ died");
                     String fileId = entry.getKey().p1;
                     Integer chunkNo = entry.getKey().p2, chunkId = entry.getValue();
                     // We want to handle instead of sending because we can have the file
