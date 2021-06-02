@@ -8,24 +8,22 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
-import java.nio.channels.spi.SelectorProvider;
 import java.security.*;
 import java.security.cert.CertificateException;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class SockThread implements Runnable {
-    private static final int MAX_CONNS = 5;
+    private static final int MAX_CONNS = Runtime.getRuntime().availableProcessors() + 1;
     private static final String password = "123456";
 
     private final AtomicBoolean running = new AtomicBoolean(false);
-    private final ExecutorService sendThreadPool =
-            Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() + 1);
-    private final ExecutorService receiveThreadPool =
-            Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() + 1);
+    private final ExecutorService sendThreadPool = Executors.newFixedThreadPool(MAX_CONNS);
+    private final ExecutorService receiveThreadPool = Executors.newFixedThreadPool(MAX_CONNS);
     private final ServerSocketChannel serverSocketChannel;
     private final InetAddress address;
     private final Integer port;
@@ -300,7 +298,8 @@ public class SockThread implements Runnable {
         try {
             socketChannel.register(this.selector, SelectionKey.OP_READ, d);
         } catch (ClosedChannelException e) {
-            System.err.println("Failed to regiter.");
+            System.err.println("Failed to register.");
+            d.thread.shutdown();
             return;
         }
 
@@ -308,22 +307,22 @@ public class SockThread implements Runnable {
             if (this.doHandshake(engine, socketChannel, bufs[1], bufs[3]) != 0) {
                 System.err.println("Handshake failed (accept con)");
                 socketChannel.close();
-                return;
+                d.thread.shutdown();
             }
         } catch (Exception e) {
             System.err.println("Handshake failed (accept con)");
+            d.thread.shutdown();
             try {
                 socketChannel.close();
             } catch (IOException ignored) {
-                return;
             }
         }
-
-        // this.readOuter(socketChannel, d);
     }
 
     @Override
     public void run() {
+        // http://tutorials.jenkov.com/java-nio/selectors.html
+        
         running.set(true);
         while (running.get()) {
             try {
@@ -339,36 +338,47 @@ public class SockThread implements Runnable {
                 if (!key.isValid())
                     continue;
 
-                if (key.isAcceptable()) {
-                    this.acceptCon(key);
-                } else if (key.isReadable()) {
-                    SocketChannel socketChannel = (SocketChannel) key.channel();
-                    SSLEngineData d = (SSLEngineData) key.attachment();
+                try {
+                    if (key.isAcceptable()) {
+                        this.acceptCon(key);
+                    } else if (key.isReadable()) {
+                        SocketChannel socketChannel = (SocketChannel) key.channel();
+                        SSLEngineData d = (SSLEngineData) key.attachment();
 
-                    this.readOuter(socketChannel, d);
+                        d.thread.submit(() -> this.readOuter(key, socketChannel, d));
+                    }
+                } catch (RejectedExecutionException ignored) {
+                    key.cancel();
                 }
             }
         }
     }
 
-    private void readOuter(SocketChannel socketChannel, SSLEngineData d) {
+    private void readOuter(SelectionKey key, SocketChannel socketChannel, SSLEngineData d) {
         try {
             boolean isClosed = this.read(socketChannel, d);
 
             // create message instance from the received bytes
-            if (isClosed && d.content.size() > 0) {
-                ByteArrayInputStream bis = new ByteArrayInputStream(d.content.toByteArray());
-                d.content.reset();
+            if (isClosed) {
+                key.cancel();
+                d.thread.shutdown();
 
-                ObjectInput in = new ObjectInputStream(bis);
-                Message msg = (Message) in.readObject();
-                bis.close();
+                if (d.content.size() > 0) {
+                    ByteArrayInputStream bis = new ByteArrayInputStream(d.content.toByteArray());
+                    d.content.reset();
 
-                // handle message
-                this.receiveThreadPool.execute(() -> this.observer.handle(msg));
+                    ObjectInput in = new ObjectInputStream(bis);
+                    Message msg = (Message) in.readObject();
+                    bis.close();
+
+                    // handle message
+                    this.receiveThreadPool.submit(() -> this.observer.handle(msg));
+                }
             }
         } catch (IOException | ClassNotFoundException ignored) {
-            System.err.println("Lost message");
+            key.cancel();
+            d.thread.shutdown();
+            // System.err.println("Lost message.");
         }
     }
 
@@ -511,7 +521,7 @@ public class SockThread implements Runnable {
         SSLEngineData d = new SSLEngineData(engine, bufs[0], bufs[1], bufs[2], bufs[3], false);
 
         // IMP
-        // IMP keep this here because there's a race condition involving the server selector dectecting read operations
+        // IMP keep this here because there's a race condition involving the server selector detecting read operations
         // this sleep simulates network delays (not present on localhost connections)
         try {
             Thread.sleep(500);

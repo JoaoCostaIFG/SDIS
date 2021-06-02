@@ -11,11 +11,12 @@ Second Project for group T5G21.
 
 ## How to run
 
-These are the instructions on how to run our project, taking in account they are executed from the `build` folder, so
-start by changing directory.
+These are the instructions on how to run our project, taking in account they are
+executed from the `build` folder, so **start by changing your working
+directory**.
 
 ```shell
-cd build
+mkdir build && cd build
 ```
 
 ### Compile
@@ -34,6 +35,12 @@ To start a peer's execution, execute the following command.
 java Peer <peer_id> <address> <port>
 ```
 
+e.g.:
+
+```shell
+java Peer 1 localhost 8001
+```
+
 ### Test the application
 
 To test the application, execute the following command.
@@ -42,13 +49,22 @@ To test the application, execute the following command.
 java TestApp <access_point> <BACKUP|RESTORE|DELETE|RECLAIM|STATE|JOIN> [operand_1 [operand_2]]
 ```
 
-Alternatively, each peer's has a permanent while loop waiting to receive commands.
+e.g.:
+
+```shell
+java TestApp peer1 JOIN
+```
+
+Note that the access point of each peer is the string "peer" prepended to its
+ID. Alternatively, each peer's has a local command loop, so you can send
+commands like `join`, e.g.:
 
 ```shell
 <BACKUP|RESTORE|DELETE|RECLAIM|STATE|JOIN|ST> [operand_1]
 ```
 
-**Note:** Additionally, an `st` command was added to check the Chord's state.
+These commands are mostly used for debugging and testing.  
+**Note:** The `st` command was added to obtain the Chord's state information.
 
 ## Project structure
 
@@ -56,11 +72,11 @@ Alternatively, each peer's has a permanent while loop waiting to receive command
 - 📂 [doc](doc) - Relevant document files.
 - 📂 [keys](keys) - SSL client and server keys.
 - 📂 [src](src) - Source code for the project.
-    - 📂 [chord](src/chord) - Chord protocol implementation.
-    - 📂 [file](src/file) - Storage handling operations.
-    - 📂 [message](src/message) - Control messages exchanged between Chord nodes.
-    - 📂 [sender](src/sender) - Message handling.
-    - 📂 [state](src/state) - State information of a peer.
-    - 📂 [utils](src/utils) - Miscellaneous utilities.
-    - 📄 [Peer](src/Peer.java) - Class that represents a peer.
-    - 📄 [TestApp](src/TestApp.java) - Class to test the application.
+  - 📂 [chord](src/chord) - Chord protocol implementation.
+  - 📂 [file](src/file) - Storage handling operations.
+  - 📂 [message](src/message) - Control messages exchanged between Chord nodes.
+  - 📂 [sender](src/sender) - Message handling.
+  - 📂 [state](src/state) - State information of a peer.
+  - 📂 [utils](src/utils) - Miscellaneous utilities.
+  - 📄 [Peer](src/Peer.java) - Class that represents a peer.
+  - 📄 [TestApp](src/TestApp.java) - Class to test the application.
