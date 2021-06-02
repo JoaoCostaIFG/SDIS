@@ -321,6 +321,8 @@ public class SockThread implements Runnable {
 
     @Override
     public void run() {
+        // http://tutorials.jenkov.com/java-nio/selectors.html
+        
         running.set(true);
         while (running.get()) {
             try {
@@ -336,17 +338,17 @@ public class SockThread implements Runnable {
                 if (!key.isValid())
                     continue;
 
-                if (key.isAcceptable()) {
-                    this.acceptCon(key);
-                } else if (key.isReadable()) {
-                    SocketChannel socketChannel = (SocketChannel) key.channel();
-                    SSLEngineData d = (SSLEngineData) key.attachment();
+                try {
+                    if (key.isAcceptable()) {
+                        this.acceptCon(key);
+                    } else if (key.isReadable()) {
+                        SocketChannel socketChannel = (SocketChannel) key.channel();
+                        SSLEngineData d = (SSLEngineData) key.attachment();
 
-                    try {
                         d.thread.submit(() -> this.readOuter(key, socketChannel, d));
-                    } catch (RejectedExecutionException ignored) {
-                        key.cancel();
                     }
+                } catch (RejectedExecutionException ignored) {
+                    key.cancel();
                 }
             }
         }
@@ -376,6 +378,7 @@ public class SockThread implements Runnable {
         } catch (IOException | ClassNotFoundException ignored) {
             key.cancel();
             d.thread.shutdown();
+            // System.err.println("Lost message.");
         }
     }
 
@@ -518,7 +521,7 @@ public class SockThread implements Runnable {
         SSLEngineData d = new SSLEngineData(engine, bufs[0], bufs[1], bufs[2], bufs[3], false);
 
         // IMP
-        // IMP keep this here because there's a race condition involving the server selector dectecting read operations
+        // IMP keep this here because there's a race condition involving the server selector detecting read operations
         // this sleep simulates network delays (not present on localhost connections)
         try {
             Thread.sleep(500);

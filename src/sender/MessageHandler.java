@@ -38,13 +38,16 @@ public class MessageHandler {
     }
 
     private void handleMsg(PutChunkMsg message) {
-        if (message.hasNoSource()) // We are responsible for this message, mark us as responsible
-            message.setSource(this.controller);
-
         if (this.messageSentByUs(message) && message.destAddrKnown()) {
             System.out.println("\t\tMessage looped through network " + message);
             return; // We sent this message and it has looped through the network
         }
+
+        if (message.hasNoSource()) { // We are responsible for this message, mark us as responsible
+            System.out.println("I am responsible for " + message);
+            message.setSource(this.controller);
+        } else
+            System.out.println("RECEIVED FROM " + message);
 
         boolean iStoredTheChunk = false;
         int chunkId = -1;
@@ -52,8 +55,8 @@ public class MessageHandler {
             // always register the existence of this file except when we want to reinit backup protocol
             State.st.addFileEntry(message.getFileId(), message.getReplication());
             State.st.declareChunk(message.getFileId(), message.getChunkNo());
-
             boolean isInitiator = State.st.isInitiator(message.getFileId());
+
             if (!isInitiator) {
                 // do not store duplicated chunks or if we surpass storage space
                 if (!State.st.amIStoringChunk(message.getFileId(), message.getChunkNo())) {
@@ -140,7 +143,7 @@ public class MessageHandler {
     }
 
     private void handleMsg(GetChunkMsg message) {
-        if (this.messageSentByUs(message) && message.destAddrKnown() && message.hasLooped()) {
+        if (message.destAddrKnown() && message.hasLooped()) {
             System.out.println("\t\tMessage looped through network " + message);
             // Mark getchunk has unsuccessful
             var filePair = new Pair<>(message.getFileId(), message.getChunkNo());
@@ -226,6 +229,7 @@ public class MessageHandler {
     }
 
     private boolean messageSentByUs(Message message) {
+        if (message.getSourcePort() == -1) return false;
         return (message.getSourcePort() == this.controller.getPort() &&
                 message.getSourceAddress().equals(this.controller.getAddress()) &&
                 message.destAddrKnown());

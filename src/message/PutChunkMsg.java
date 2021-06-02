@@ -54,7 +54,7 @@ public class PutChunkMsg extends Message {
 
     @Override
     public String toString() {
-        return super.toString() + (Message.DEBUG_MODE ? " FileId: " + fileId + " ChunkNo:" + chunkNo : "")
-                + " Rep:" + replication + " SeqNum:" + seqNumber;
+        return super.toString() + (Message.DEBUG_MODE ? " FileId: " + fileId : "")
+                + " Rep:" + replication + " SeqNum:" + seqNumber + " ChunkNo:" + chunkNo ;
     }
 }

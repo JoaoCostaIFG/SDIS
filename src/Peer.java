@@ -313,8 +313,7 @@ public class Peer implements TestInterface {
 
         for (int i = 0; i < chunks.size(); ++i) {
             int destId = DigestFile.getId(fileId, i);
-            this.chordController.send(new PutChunkMsg(fileId, i, chunks.get(i),
-                    replicationDegree, this.address, this.port, destId));
+            this.chordController.send(new PutChunkMsg(fileId, i, chunks.get(i), replicationDegree, destId));
         }
 
         State.st.rmTask(task);
