@@ -354,8 +354,7 @@ public class SockThread implements Runnable {
                             // handle message
                             this.receiveThreadPool.execute(() -> this.observer.handle(msg));
                         }
-                    } catch (IOException | ClassNotFoundException e) {
-                        e.printStackTrace();
+                    } catch (IOException | ClassNotFoundException ignored) {
                     }
                 }
             }
@@ -392,7 +391,7 @@ public class SockThread implements Runnable {
             SSLEngineResult res;
             res = d.engine.unwrap(d.peerNetData, d.peerAppData);
 
-            System.out.println("READ: " + res);
+            // System.out.println("READ: " + res);
 
             switch (res.getStatus()) {
                 case OK:
@@ -466,7 +465,7 @@ public class SockThread implements Runnable {
             socketChannel.connect(new InetSocketAddress(address, port));
             while (!socketChannel.finishConnect()) { /* busy-wait */ }
         } catch (IOException e) {
-            e.printStackTrace();
+            System.err.println("Connection failed to " + address + ":" + port);
             return;
         }
 
@@ -579,6 +578,7 @@ public class SockThread implements Runnable {
         // System.out.println("Closed outbound");
 
         // System.out.println("Waiting for closure");
+        int tries = 10;
         xau:
         while (true) {
             d.peerNetData.clear();
@@ -589,6 +589,12 @@ public class SockThread implements Runnable {
                 socketChannel.close();
                 return;
             } else if (n == 0) {
+                if (tries-- <= 0) break; // close socket if we waited too long
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    break; // close socket if interrupted
+                }
                 continue;
             }
 
@@ -596,11 +602,12 @@ public class SockThread implements Runnable {
             while (d.peerNetData.hasRemaining()) {
                 SSLEngineResult res = d.engine.unwrap(d.peerNetData, d.peerAppData);
                 //System.out.println("Closure: " + res);
-                if (res.getStatus() == SSLEngineResult.Status.CLOSED)
+                if (res.getStatus() == SSLEngineResult.Status.CLOSED) {
+                    d.engine.closeInbound();
                     break xau;
+                }
             }
         }
-        d.engine.closeInbound();
         // System.out.println("Closed inbound");
 
         // xau rossetta
