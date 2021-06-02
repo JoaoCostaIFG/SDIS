@@ -543,7 +543,7 @@ public class Peer implements TestInterface {
 
     private static void usage() {
         System.err.println("Usage: java\n" +
-                "\tProj1 <peer id>\n" +
+                "\tPeer <peer id>\n" +
                 "\t<ip address> <port>");
         System.exit(1);
     }
