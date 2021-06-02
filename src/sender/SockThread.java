@@ -368,6 +368,7 @@ public class SockThread implements Runnable {
                 this.receiveThreadPool.execute(() -> this.observer.handle(msg));
             }
         } catch (IOException | ClassNotFoundException ignored) {
+            System.err.println("Lost message");
         }
     }
 

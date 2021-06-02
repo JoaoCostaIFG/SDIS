@@ -201,8 +201,8 @@ public class Peer implements TestInterface {
             cmd = scanner.nextLine();
             System.out.println("CMD: " + cmd);
             // String filePath = "../test_files/filename.txt";
-            String filePath = "../test_files/test.txt";
-            // String filePath = "../test_files/64k.txt";
+            // String filePath = "../test_files/test.txt";
+            String filePath = "../test_files/64k.txt";
             if (cmd.equalsIgnoreCase("join")) {
                 try {
                     System.out.println(this.join());
@@ -313,8 +313,7 @@ public class Peer implements TestInterface {
 
         for (int i = 0; i < chunks.size(); ++i) {
             int destId = DigestFile.getId(fileId, i);
-            this.chordController.send(new PutChunkMsg(fileId, i, chunks.get(i),
-                    replicationDegree, this.address, this.port, destId));
+            this.chordController.send(new PutChunkMsg(fileId, i, chunks.get(i), replicationDegree, destId));
         }
 
         State.st.rmTask(task);
