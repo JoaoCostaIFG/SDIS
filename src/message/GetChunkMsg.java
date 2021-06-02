@@ -7,14 +7,34 @@ import java.net.InetAddress;
 public class GetChunkMsg extends Message {
     public static final String type = "GETCHUNK";
     private final Integer chunkNo;
+    private int responsible;
+    private boolean looped;
 
     public GetChunkMsg(String fileId, int chunkNo, InetAddress sourceDest, int sourcePort, Integer destId)  {
         super(fileId, sourceDest, sourcePort, destId);
         this.chunkNo = chunkNo;
+        this.responsible = -1;
+        this.looped = false;
+    }
+
+    public int getResponsible() {
+        return responsible;
+    }
+
+    public void setResponsible(int responsible) {
+        this.responsible = responsible;
     }
 
     public Integer getChunkNo() {
         return chunkNo;
+    }
+
+    public void setLooped() {
+        this.looped = true;
+    }
+
+    public boolean hasLooped() {
+        return this.looped;
     }
 
     @Override

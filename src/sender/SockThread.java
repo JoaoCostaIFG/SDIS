@@ -392,7 +392,7 @@ public class SockThread implements Runnable {
             SSLEngineResult res;
             res = d.engine.unwrap(d.peerNetData, d.peerAppData);
 
-            System.out.println("READ: " + res);
+            // System.out.println("READ: " + res);
 
             switch (res.getStatus()) {
                 case OK:

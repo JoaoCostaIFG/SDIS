@@ -140,6 +140,15 @@ public class MessageHandler {
     }
 
     private void handleMsg(GetChunkMsg message) {
+        if (this.messageSentByUs(message) && message.destAddrKnown() && message.hasLooped()) {
+            System.out.println("\t\tMessage looped through network " + message);
+            // Mark getchunk has unsuccessful
+            var filePair = new Pair<>(message.getFileId(), message.getChunkNo());
+            if (this.receivedChunks.containsKey(filePair))
+                this.receivedChunks.get(filePair).complete(null);
+            return; // We sent this message and it has looped through the network
+        }
+
         synchronized (State.st) {
             if (State.st.amIStoringChunk(message.getFileId(), message.getChunkNo())) {
                 ChunkMsg response = new ChunkMsg(message.getFileId(), message.getChunkNo(),
@@ -150,13 +159,13 @@ public class MessageHandler {
             }
         }
 
-        if (this.messageSentByUs(message) && message.destAddrKnown()) {
-            System.out.println("\t\tMessage looped through network " + message);
-            // Mark getchunk has unsuccessful
-            var filePair = new Pair<>(message.getFileId(), message.getChunkNo());
-            if (this.receivedChunks.containsKey(filePair))
-                this.receivedChunks.get(filePair).complete(null);
-            return; // We sent this message and it has looped through the network
+        if (message.destAddrKnown()) { // Sent to us
+            if (message.getResponsible() == this.controller.getId()) { // First time we are receiving the message
+                message.setResponsible(this.controller.getId());
+            } else { // The message has looped, send to source saying that the chunk isn't in the network
+                message.setLooped();
+                this.controller.sendDirectly(message, message.getSourceAddress(), message.getSourcePort());
+            }
         }
 
         // Resend to next node in ring
