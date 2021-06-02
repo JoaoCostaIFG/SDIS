@@ -1,6 +1,6 @@
 OUT_DIR = build
 
-build: clean
+build:
 	@javac -cp src/ -d $(OUT_DIR) src/*.java src/*/*.java
 
 clean:
