@@ -361,9 +361,7 @@ public class Peer implements TestInterface {
             CompletableFuture<byte[]> fut = promisedChunks.get(currChunk);
             try {
                 byte[] chunk = fut.get();
-                System.out.println("GOT C " + currChunk);
                 if (chunk == null) { // Getchunk passed through everyone and didn't work
-                    System.out.println("????????????");
                     this.chordController.removeAllChunkFuture(fileId); // clean up all promises (we won't need them)
                     State.st.rmTask(task);
                     throw new RemoteException("Couldn't get chunk " + currChunk);

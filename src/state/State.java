@@ -191,9 +191,7 @@ public class State implements Serializable {
     }
 
     public void removeSuccChunk(String fileId) {
-        for (var key: succChunks.keySet())
-            if (key.p1.equals(fileId))
-                this.removeSuccChunk(fileId, key.p2);
+        this.succChunks.entrySet().removeIf(e -> e.getKey().p1.equals(fileId));
     }
 
     public void replaceSuccChunk(Map<Pair<String, Integer>, Integer> map) {
