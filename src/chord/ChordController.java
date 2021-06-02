@@ -48,10 +48,47 @@ public class ChordController implements Observer {
 
     public void stop() {
         this.sock.interrupt();
+        this.sock.close();
     }
 
     public int getId() {
         return this.chordNode.getId();
+    }
+
+    public void addChunkFuture(String fileId, int currChunk, CompletableFuture<byte[]> fut) {
+        this.messageHandler.addChunkFuture(fileId, currChunk, fut);
+    }
+
+    public void removeAllChunkFuture(String fileId) {
+        this.messageHandler.removeAllChunkFuture(fileId);
+    }
+
+    public void join(ChordInterface node) throws RemoteException {
+        this.chordNode.join(node);
+    }
+
+    /* SEND/RECEIVE */
+    @Override
+    public void handle(Message message) {
+        System.out.print("\tReceived: " + message + " - ");
+        // Message is for us
+        if (this.chordNode.messageIsForUs(message)) {
+            System.out.println("Handling\n");
+            messageHandler.handleMessage(message);
+        } else { // message isn't for us
+            System.out.println("Resending\n");
+            this.sendToNode(message); // resend it through the chord ring
+        }
+    }
+
+    public void send(Message message) {
+        if (this.chordNode.messageIsForUs(message)) {
+            System.out.println("\tNot sending message (its for me): " + message + "\n");
+            messageHandler.handleMessage(message);
+        } else { // message isn't for us
+            System.out.println("Sending (ReHopping): " + message + "\n");
+            this.sendToNode(message); // resend it through the chord ring
+        }
     }
 
     private void sendToNode(Message message) {
@@ -74,29 +111,6 @@ public class ChordController implements Observer {
         }
 
         this.sock.send(message);
-    }
-
-    @Override
-    public void handle(Message message) {
-        System.out.print("\tReceived: " + message + " - ");
-        // Message is for us
-        if (this.chordNode.messageIsForUs(message)) {
-            System.out.println("Handling\n");
-            messageHandler.handleMessage(message);
-        } else { // message isn't for us
-            System.out.println("Resending\n");
-            this.sendToNode(message); // resend it through the chord ring
-        }
-    }
-
-    public void send(Message message) {
-        if (this.chordNode.messageIsForUs(message)) {
-            System.out.println("\tNot sending message (its for me): " + message + "\n");
-            messageHandler.handleMessage(message);
-        } else { // message isn't for us
-            System.out.println("Sending (ReHopping): " + message + "\n");
-            this.sendToNode(message); // resend it through the chord ring
-        }
     }
 
     public void sendDirectly(Message message, InetAddress address, int port) {
@@ -139,29 +153,16 @@ public class ChordController implements Observer {
         );
     }
 
-    public void addChunkFuture(String fileId, int currChunk, CompletableFuture<byte[]> fut) {
-        this.messageHandler.addChunkFuture(fileId, currChunk, fut);
-    }
-
-    public void removeAllChunkFuture(String fileId) {
-        this.messageHandler.removeAllChunkFuture(fileId);
-    }
-
-
-    @Override
-    public String toString() {
-        return this.chordNode + "\nSock: " + this.sock;
-    }
-
-    public void join(ChordInterface node) throws RemoteException {
-        this.chordNode.join(node);
-    }
-
     public void sendToPred(Message message) {
         try {
             this.sendDirectly(message, this.chordNode.getPredecessor());
         } catch (RemoteException e) {
             System.err.println("Couldn't send REMOVED message to predecessor");
         }
+    }
+
+    @Override
+    public String toString() {
+        return this.chordNode + "\nSock: " + this.sock;
     }
 }

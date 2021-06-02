@@ -5,7 +5,7 @@ import java.rmi.registry.Registry;
 
 public class TestApp {
     private static void usage() {
-        System.err.println("Usage: java TestApp <AccessPoint> <BACKUP|RESTORE|DELETE|RECLAIM|STATE> [opnd_1 [opnd_2]]\n");
+        System.err.println("Usage: java TestApp <AccessPoint> <BACKUP|RESTORE|DELETE|RECLAIM|STATE|JOIN> [opnd_1 [opnd_2]]\n");
         System.exit(1);
     }
 
@@ -70,6 +70,13 @@ public class TestApp {
 
                     reply = stub.state();
                     break;
+                case "JOIN":
+                    if (args.length != 2) usage();
+                    System.out.println("JOIN");
+
+                    reply = stub.join();
+                    break;
+
                 default:
                     System.err.println("Unknown operation: " + oper);
                     usage();
