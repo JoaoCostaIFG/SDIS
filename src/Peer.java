@@ -202,6 +202,7 @@ public class Peer implements TestInterface {
             System.out.println("CMD: " + cmd);
             // String filePath = "../test_files/filename.txt";
             String filePath = "../test_files/test.txt";
+            // String filePath = "../test_files/64k.txt";
             if (cmd.equalsIgnoreCase("join")) {
                 try {
                     System.out.println(this.join());
@@ -543,7 +544,7 @@ public class Peer implements TestInterface {
 
     private static void usage() {
         System.err.println("Usage: java\n" +
-                "\tProj1 <peer id>\n" +
+                "\tPeer <peer id>\n" +
                 "\t<ip address> <port>");
         System.exit(1);
     }

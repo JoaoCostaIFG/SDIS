@@ -334,7 +334,7 @@ public class ChordNode implements ChordInterface {
      */
     public static int genId(String s) {
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-1");
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hash = digest.digest(s.getBytes());
             ByteBuffer wrapped = ByteBuffer.wrap(hash);
             int div = (int) Math.floor(pow(2, ChordNode.m));

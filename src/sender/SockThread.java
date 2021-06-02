@@ -25,7 +25,9 @@ public class SockThread implements Runnable {
     private static final String password = "123456";
 
     private final AtomicBoolean running = new AtomicBoolean(false);
-    private final ExecutorService threadPool =
+    private final ExecutorService sendThreadPool =
+            Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() + 1);
+    private final ExecutorService receiveThreadPool =
             Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() + 1);
     private final ServerSocketChannel serverSocketChannel;
     private final InetAddress address;
@@ -36,6 +38,9 @@ public class SockThread implements Runnable {
     private final Selector selector;
 
     public SockThread(InetAddress address, Integer port, Observer chordNode) throws IOException {
+        // bigger files
+        System.setProperty("jsse.SSLEngine.acceptLargeFragments", "true");
+
         this.address = address;
         this.port = port;
         this.observer = chordNode;
@@ -80,7 +85,8 @@ public class SockThread implements Runnable {
     }
 
     public void close() {
-        this.threadPool.shutdown();
+        this.sendThreadPool.shutdown();
+        this.receiveThreadPool.shutdown();
 
         try {
             this.selector.close();
@@ -115,7 +121,7 @@ public class SockThread implements Runnable {
             b.put(dst);
             return b;
         } else {
-            dst.compact();
+            dst.clear();
             return dst;
         }
     }
@@ -133,7 +139,7 @@ public class SockThread implements Runnable {
             b.put(src);
             return b;
         } else {
-            dst.compact();
+            dst.clear();
         }
         return src;
     }
@@ -346,7 +352,7 @@ public class SockThread implements Runnable {
                             bis.close();
 
                             // handle message
-                            this.threadPool.execute(() -> this.observer.handle(msg));
+                            this.receiveThreadPool.execute(() -> this.observer.handle(msg));
                         }
                     } catch (IOException | ClassNotFoundException e) {
                         e.printStackTrace();
@@ -356,20 +362,27 @@ public class SockThread implements Runnable {
         }
     }
 
-    private boolean read(SocketChannel socketChannel, SSLEngineData d)
-            throws IOException, ClassNotFoundException {
+    private void handleEndOfStream(SocketChannel socketChannel, SSLEngineData d) {
+        System.err.println("Got end of stream from peer. Attempting to close connection.");
+        try {
+            d.engine.closeInbound();
+        } catch (SSLException e) {
+            System.err.println("Peer didn't follow the correct connection end procedure.");
+        }
+        try {
+            this.closeSSLConnection(socketChannel, d);
+        } catch (IOException ignored) {
+        }
+    }
+
+    private boolean read(SocketChannel socketChannel, SSLEngineData d) throws IOException, ClassNotFoundException {
         d.peerNetData.clear();
+
         // receive loop - read TLS encoded data from peer
         int n = socketChannel.read(d.peerNetData);
         // end of stream
         if (n < 0) {
-            System.err.println("Got end of stream from peer. Attempting to close connection.");
-            try {
-                d.engine.closeInbound();
-            } catch (SSLException e) {
-                System.err.println("Peer didn't follow the correct connection end procedure.");
-            }
-            this.closeSSLConnection(socketChannel, d);
+            this.handleEndOfStream(socketChannel, d);
             return true;
         }
 
@@ -379,7 +392,7 @@ public class SockThread implements Runnable {
             SSLEngineResult res;
             res = d.engine.unwrap(d.peerNetData, d.peerAppData);
 
-            //System.out.println("READ: " + res);
+            System.out.println("READ: " + res);
 
             switch (res.getStatus()) {
                 case OK:
@@ -393,7 +406,13 @@ public class SockThread implements Runnable {
                     break;
                 case BUFFER_UNDERFLOW:
                     d.peerNetData = this.handleUnderflow(d.engine, d.peerNetData, d.peerAppData);
-                    break;
+                    n = socketChannel.read(d.peerNetData);
+                    // end of stream
+                    if (n < 0) {
+                        this.handleEndOfStream(socketChannel, d);
+                        return true;
+                    }
+                    return false;
                 case CLOSED:
                     this.closeSSLConnection(socketChannel, d);
                     return true;
@@ -430,6 +449,10 @@ public class SockThread implements Runnable {
                     return;
             }
         }
+    }
+
+    public void send(Message message) {
+        this.sendThreadPool.execute(() -> this.sendInner(message));
     }
 
     private void sendInner(Message message) {
@@ -476,16 +499,30 @@ public class SockThread implements Runnable {
             return;
         }
 
+        // send message
+        SSLEngineData d = new SSLEngineData(engine, bufs[0], bufs[1], bufs[2], bufs[3], false);
+
         // TODO
         // IMP keep this here because there's a race condition involving the server selector
         try {
-            Thread.sleep(65);
+            Thread.sleep(100);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
 
-        // send message
-        SSLEngineData d = new SSLEngineData(engine, bufs[0], bufs[1], bufs[2], bufs[3], false);
+        /*
+        // Attempt at sending larger messages
+        int currInd = 0;
+        while (currInd < dataToSend.length) {
+            int capAvailable = d.myAppData.capacity();
+            if (capAvailable > dataToSend.length - currInd)
+                capAvailable = dataToSend.length - currInd;
+
+            .put(Arrays.copyOfRange(dataToSend, currInd, currInd + capAvailable))
+            currInd += capAvailable;
+        }
+         */
+
         d.myAppData.clear().put(dataToSend).flip();
         try {
             this.write(socketChannel, d);
@@ -499,10 +536,6 @@ public class SockThread implements Runnable {
         } catch (IOException e) {
             e.printStackTrace();
         }
-    }
-
-    public void send(Message message) {
-        this.sendInner(message);
     }
 
     private void closeSSLConnectionServer(SocketChannel socketChannel, SSLEngineData d) throws IOException {
@@ -550,6 +583,7 @@ public class SockThread implements Runnable {
         while (true) {
             d.peerNetData.clear();
             int n = socketChannel.read(d.peerNetData);
+            //System.out.println(n);
             if (n < 0) {
                 d.engine.closeOutbound();
                 socketChannel.close();
