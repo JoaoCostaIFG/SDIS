@@ -19,6 +19,8 @@ directory**.
 mkdir build && cd build
 ```
 
+Important: This project was developed and tested for Java 15.
+
 ### Compile
 
 To compile the project code, execute the following command.
@@ -65,6 +67,28 @@ commands like `join`, e.g.:
 
 These commands are mostly used for debugging and testing.  
 **Note:** The `st` command was added to obtain the Chord's state information.
+
+## Peer storage
+
+The storage file structure for each peer is in its running directory (usually
+the build directory). The root of the file storage of each peer is identified
+using its ID, e.g.: for the peer with ID 1, the file storage root is peer-1.
+
+The target 'cleanpeers' of the Makefile can be used to clear the storage of all
+peers, e.g.: `make -C ../ cleanpeers`.
+
+Each peer stores its internal state and replicated file chunks in these
+structures (one for each peer).
+
+## SSL keys
+
+The keys used by the SSLEngine for communication are stored in the keys
+directory.
+
+## Test files
+
+The `test_files` directory contains the files used during the development and
+testing of the application.
 
 ## Project structure
 

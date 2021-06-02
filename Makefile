@@ -6,4 +6,7 @@ build:
 clean:
 	@rm -rf $(OUT_DIR)/*
 
+cleanpeers:
+	@rm -rf $(OUT_DIR)/peer-*
+
 .PHONY: clean build
