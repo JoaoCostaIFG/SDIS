@@ -2,7 +2,6 @@ package message;
 
 import chord.ChordController;
 import chord.ChordInterface;
-import chord.ChordNode;
 
 import java.io.Serializable;
 import java.net.InetAddress;

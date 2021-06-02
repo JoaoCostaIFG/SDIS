@@ -23,8 +23,6 @@ import java.util.Map;
 import java.util.Scanner;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 
 public class Peer implements TestInterface {
     private ChordController chordController;
@@ -33,11 +31,6 @@ public class Peer implements TestInterface {
     private final String id;
     private final InetAddress address;
     private final int port;
-
-
-    // thread pool
-    private final ScheduledExecutorService testAppThreadPool =
-            Executors.newScheduledThreadPool(Runtime.getRuntime().availableProcessors() + 1);
 
     public Registry registry = null;
 
@@ -67,12 +60,11 @@ public class Peer implements TestInterface {
                     public void run() {
                         try {
                             chordNode.getChordNode().stabilize();
-                        } catch (RemoteException e) {
-                            e.printStackTrace();
+                        } catch (RemoteException ignored) {
                         }
                     }
                 },
-                1,
+                0,
                 100
         );
 
@@ -82,8 +74,7 @@ public class Peer implements TestInterface {
                     public void run() {
                         try {
                             chordNode.getChordNode().stabilize();
-                        } catch (Exception e) {
-                            e.printStackTrace();
+                        } catch (Exception ignored) {
                         }
                     }
                 },
@@ -97,12 +88,11 @@ public class Peer implements TestInterface {
                     public void run() {
                         try {
                             chordNode.getChordNode().checkPredecessor();
-                        } catch (Exception e) {
-                            e.printStackTrace();
+                        } catch (Exception ignored) {
                         }
                     }
                 },
-                103,
+                83,
                 100
         );
     }
@@ -174,9 +164,6 @@ public class Peer implements TestInterface {
     public void cleanup() {
         if (closed) return;
         closed = true;
-
-        // shutdown executors
-        this.testAppThreadPool.shutdownNow();
 
         // cleanup the access point
         if (registry != null) {
@@ -418,7 +405,7 @@ public class Peer implements TestInterface {
 
     // force == true => ignore if the the replication degree becomes 0
     // returns capacity left to trim
-    private long trimFiles(long capactityToTrim, boolean force) throws RemoteException {
+    private long trimFiles(long capactityToTrim) throws RemoteException {
         if (capactityToTrim <= 0) return 0;
 
         long currentCap = capactityToTrim;
@@ -428,7 +415,7 @@ public class Peer implements TestInterface {
             for (var chunkEntry : entry.getValue().getAllChunks().entrySet()) {
                 int chunkNo = chunkEntry.getKey();
                 boolean isStored = chunkEntry.getValue().p2 != -1;
-                System.out.println("?" + isStored + " " + chunkEntry.getValue().p2);
+
                 if (isStored) {
                     // if we have the chunk stored => delete it && decrement perceived rep.
                     int chunkId = DigestFile.getId(fileId, chunkNo);
@@ -457,7 +444,7 @@ public class Peer implements TestInterface {
     }
 
     @Override
-    public String reclaim(int newMaxDiskSpaceKB) throws RemoteException { // TODO Adicionar isto aos ENHANCE
+    public String reclaim(int newMaxDiskSpaceKB) throws RemoteException {
         long newMaxDiskSpaceB = newMaxDiskSpaceKB * 1000L;
         boolean isDone = false;
 
@@ -481,9 +468,7 @@ public class Peer implements TestInterface {
                 if (currentCap > 0) {
                     // remove things (trying to keep everything above 0 replication degree)
                     System.err.println("Freeing: " + currentCap);
-                    currentCap = trimFiles(currentCap, false);
-                    if (currentCap > 0) trimFiles(currentCap, true);
-
+                    trimFiles(currentCap);
                 }
             }
         }
@@ -532,7 +517,7 @@ public class Peer implements TestInterface {
                 }
             }
 
-            for (var entry2: State.st.getSuccChunksIds().entrySet())
+            for (var entry2 : State.st.getSuccChunksIds().entrySet())
                 chunksSuccIsStoring.append("\tFileId: ").append(entry2.getKey().p1)
                         .append(" ChunkNo: ").append(entry2.getKey().p2)
                         .append(" ChunkId: ").append(entry2.getValue()).append("\n");
@@ -587,10 +572,8 @@ public class Peer implements TestInterface {
         // In this function we are verifying the modified files :). Hope your day is going as intended. Bye <3
         prog.verifyModifiedFiles();
 
-        // TODO: add to extras section
         // setup the access point
         TestInterface stub;
-
         try {
             stub = (TestInterface) UnicastRemoteObject.exportObject(prog, 0);
             prog.registry = LocateRegistry.getRegistry();

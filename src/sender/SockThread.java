@@ -7,7 +7,10 @@ import java.io.*;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.channels.*;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.nio.channels.ServerSocketChannel;
+import java.nio.channels.SocketChannel;
 import java.nio.channels.spi.SelectorProvider;
 import java.security.*;
 import java.security.cert.CertificateException;
@@ -23,7 +26,7 @@ public class SockThread implements Runnable {
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final ExecutorService threadPool =
-            Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+            Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() + 1);
     private final ServerSocketChannel serverSocketChannel;
     private final InetAddress address;
     private final Integer port;
@@ -54,7 +57,7 @@ public class SockThread implements Runnable {
             tmf.init(ts);
 
             // get instance of SSLContext for TLS protocols
-            SSLContext sslCtx = SSLContext.getInstance("TLSv1.2");
+            SSLContext sslCtx = SSLContext.getInstance("TLSv1.3");
             sslCtx.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
             this.sslc = sslCtx;
         } catch (KeyStoreException | CertificateException | NoSuchAlgorithmException | IOException | UnrecoverableKeyException | KeyManagementException e) {
@@ -331,10 +334,10 @@ public class SockThread implements Runnable {
                         SocketChannel socketChannel = (SocketChannel) key.channel();
                         SSLEngineData d = (SSLEngineData) key.attachment();
 
-                        this.read(socketChannel, d);
+                        boolean closingTime = this.read(socketChannel, d);
 
                         // create message instance from the received bytes
-                        if (d.content.size() > 0) {
+                        if (closingTime && d.content.size() > 0) {
                             ByteArrayInputStream bis = new ByteArrayInputStream(d.content.toByteArray());
                             d.content.reset();
 
@@ -499,10 +502,7 @@ public class SockThread implements Runnable {
     }
 
     public void send(Message message) {
-        this.threadPool.execute(
-            () -> {
-                this.sendInner(message);
-        });
+        this.threadPool.execute(() -> this.sendInner(message));
     }
 
     private void closeSSLConnectionServer(SocketChannel socketChannel, SSLEngineData d) throws IOException {

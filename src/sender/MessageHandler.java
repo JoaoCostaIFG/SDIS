@@ -32,7 +32,7 @@ public class MessageHandler {
     }
 
     public void removeAllChunkFuture(String fileId) {
-        for (var entry: this.receivedChunks.entrySet())
+        for (var entry : this.receivedChunks.entrySet())
             if (entry.getKey().p1.equals(fileId))
                 this.receivedChunks.remove(entry.getKey(), entry.getValue());
     }
@@ -46,38 +46,39 @@ public class MessageHandler {
             return; // We sent this message and it has looped through the network
         }
 
-        boolean iStoredTheChunk = false, isInitiator;
+        boolean iStoredTheChunk = false;
         int chunkId = -1;
         synchronized (State.st) {
             // always register the existence of this file except when we want to reinit backup protocol
             State.st.addFileEntry(message.getFileId(), message.getReplication());
             State.st.declareChunk(message.getFileId(), message.getChunkNo());
-            System.out.println("ADDING " + message.getReplication());
-            isInitiator = State.st.isInitiator(message.getFileId());
-            if (!isInitiator) {
-                 // do not store duplicated chunks or if we surpass storage space
-                 if (!State.st.amIStoringChunk(message.getFileId(), message.getChunkNo())) {
-                     if (State.st.updateStorageSize(message.getChunk().length)) {
-                         try {
-                             DigestFile.writeChunk(message.getFileId(), message.getChunkNo(),
-                                     message.getChunk(), message.getChunk().length);
-                         } catch (IOException e) {
-                             e.printStackTrace();
-                             State.st.updateStorageSize(-message.getChunk().length);
-                         }
 
-                         // Add sequence number
-                         chunkId = DigestFile.getId(message.getFileId(), message.getChunkNo());
-                         State.st.setAmStoringChunk(message.getFileId(), message.getChunkNo(), chunkId, message.getSeqNumber());
-                         iStoredTheChunk = true;
-                     }
-                 } else {
-                     // Update sequence number
-                     chunkId = DigestFile.getId(message.getFileId(), message.getChunkNo());
-                     State.st.setAmStoringChunk(message.getFileId(), message.getChunkNo(), message.getSeqNumber());
-                     iStoredTheChunk = true;
-                 }
-             }
+            boolean isInitiator = State.st.isInitiator(message.getFileId());
+            if (!isInitiator) {
+                // do not store duplicated chunks or if we surpass storage space
+                if (!State.st.amIStoringChunk(message.getFileId(), message.getChunkNo())) {
+                    if (State.st.updateStorageSize(message.getChunk().length)) {
+                        try {
+                            DigestFile.writeChunk(message.getFileId(), message.getChunkNo(),
+                                    message.getChunk(), message.getChunk().length);
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                            State.st.updateStorageSize(-message.getChunk().length);
+                        }
+
+                        // Add sequence number
+                        chunkId = DigestFile.getId(message.getFileId(), message.getChunkNo());
+                        State.st.setAmStoringChunk(message.getFileId(), message.getChunkNo(),
+                                chunkId, message.getSeqNumber());
+                        iStoredTheChunk = true;
+                    }
+                } else {
+                    // Update sequence number
+                    chunkId = DigestFile.getId(message.getFileId(), message.getChunkNo());
+                    State.st.setAmStoringChunk(message.getFileId(), message.getChunkNo(), message.getSeqNumber());
+                    iStoredTheChunk = true;
+                }
+            }
         }
 
         // I am responsible and i stored the message
@@ -90,7 +91,8 @@ public class MessageHandler {
         if (iStoredTheChunk) {
             StoredMsg response = new StoredMsg(message.getFileId(), this.address, this.port,
                     message.getChunkNo(), chunkId);
-            InetAddress address; int port;
+            InetAddress address;
+            int port;
             try {
                 address = this.controller.getChordNode().getPredecessor().getAddress();
                 port = this.controller.getChordNode().getPredecessor().getPort();
@@ -103,7 +105,8 @@ public class MessageHandler {
         }
 
         // Propagate putchunks through successors
-        if (message.getSeqNumber() == 0) // We don't need to resend the putchunk message further, we are last in the chain
+        // We don't need to resend the putchunk message further, we are last in the chain
+        if (message.getSeqNumber() == 0)
             return;
 
         this.controller.sendToSucc(message);
@@ -153,7 +156,8 @@ public class MessageHandler {
             }
         }
 
-        ChunkMsg response = new ChunkMsg(message.getFileId(), message.getChunkNo(), this.address, this.port, null);
+        ChunkMsg response = new ChunkMsg(message.getFileId(), message.getChunkNo(),
+                this.address, this.port, null);
         response.setSource(this.controller);
         this.controller.sendDirectly(response, message.getSourceAddress(), message.getSourcePort());
     }
@@ -194,7 +198,8 @@ public class MessageHandler {
                         c = DigestFile.divideFileChunk(filePath, message.getChunkNo());
                     }
                 } catch (IOException e) {
-                    System.out.println("couldn't read supposed store chunk " + message.getFileId() + " " + message.getChunkNo());
+                    System.out.println("couldn't read supposed store chunk " +
+                            message.getFileId() + " " + message.getChunkNo());
                     return;
                 }
             }
@@ -217,7 +222,8 @@ public class MessageHandler {
     }
 
     public void handleMessage(Message message) {
-//        TODO i don't think we want this here, we want some message to loop through the ring. Handled by each message differently
+//        TODO i don't think we want this here, we want some message to loop through the ring.
+//         Handled by each message differently
 //        if (this.messageSentByUs(message)) {
 //            System.out.println("\t\tMessage looped through network " + message);
 //            return; // We sent this message and it has looped through the network

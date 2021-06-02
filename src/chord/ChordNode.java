@@ -39,7 +39,7 @@ public class ChordNode implements ChordInterface {
         this.registry = registry;
         this.nextFingerToFix = 0;
         this.fingerTable = new ChordInterface[m];
-        this.succList = new ChordInterface[(int) Math.ceil(m / 3.0)];
+        this.succList = new ChordInterface[m];  // 7 => 0% chance for all to fail at 50% failure rate
         this.messageHandler = handler;
 
         // init node as if he was the only one in the network
@@ -162,8 +162,6 @@ public class ChordNode implements ChordInterface {
      * and tells the successor about it
      */
     public void stabilize() throws RemoteException {
-        // TODO stack trace no timer do stabilize para ver nos ctrl+c
-
         // TODO if statement is needed?
         //if (this.predecessor != null) {
         //}
@@ -174,9 +172,13 @@ public class ChordNode implements ChordInterface {
         // update predecessor
         ChordInterface me$ = succ.getPredecessor();
         if (me$ != null) { // if pred knows about a succ
-            if (ChordNode.inBetween(me$.getId(), this.id, succ.getId())) {
-                this.setSuccessor(me$);
-                succ = me$;
+            try {
+                if (ChordNode.inBetween(me$.getId(), this.id, succ.getId())) {
+                    this.setSuccessor(me$);
+                    succ = me$;
+                }
+            } catch (RemoteException ignored) {
+                // if we fail getting the me$ id, it is dead and we don't want it as a successor
             }
         }
         succ.notify(this); // notify successor about us
