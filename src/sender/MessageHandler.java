@@ -140,6 +140,16 @@ public class MessageHandler {
     }
 
     private void handleMsg(GetChunkMsg message) {
+        synchronized (State.st) {
+            if (State.st.amIStoringChunk(message.getFileId(), message.getChunkNo())) {
+                ChunkMsg response = new ChunkMsg(message.getFileId(), message.getChunkNo(),
+                        this.address, this.port, null);
+                response.setSource(this.controller);
+                this.controller.sendDirectly(response, message.getSourceAddress(), message.getSourcePort());
+                return;
+            }
+        }
+
         if (this.messageSentByUs(message) && message.destAddrKnown()) {
             System.out.println("\t\tMessage looped through network " + message);
             // Mark getchunk has unsuccessful
@@ -149,18 +159,8 @@ public class MessageHandler {
             return; // We sent this message and it has looped through the network
         }
 
-        synchronized (State.st) {
-            if (!State.st.amIStoringChunk(message.getFileId(), message.getChunkNo())) {
-                // Resend to next node in ring
-                this.controller.sendToSucc(message);
-                return;
-            }
-        }
-
-        ChunkMsg response = new ChunkMsg(message.getFileId(), message.getChunkNo(),
-                this.address, this.port, null);
-        response.setSource(this.controller);
-        this.controller.sendDirectly(response, message.getSourceAddress(), message.getSourcePort());
+        // Resend to next node in ring
+        this.controller.sendToSucc(message);
     }
 
     private void handleMsg(RemovedMsg message) {
