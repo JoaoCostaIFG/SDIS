@@ -481,8 +481,7 @@ public class SockThread implements Runnable {
             }
             // socketChannel.configureBlocking(true);
         } catch (Exception e) {
-            e.printStackTrace();
-            System.err.println("Handshake failed (init handshake 2)");
+            System.err.println("Handshake failed (init handshake)");
             return;
         }
 
