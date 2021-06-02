@@ -502,7 +502,7 @@ public class SockThread implements Runnable {
     }
 
     public void send(Message message) {
-        this.threadPool.execute(() -> this.sendInner(message));
+        this.sendInner(message);
     }
 
     private void closeSSLConnectionServer(SocketChannel socketChannel, SSLEngineData d) throws IOException {

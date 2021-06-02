@@ -120,8 +120,11 @@ public class MessageHandler {
 
     private void handleMsg(ChunkMsg message) {
         Pair<String, Integer> msgChunk = new Pair<>(message.getFileId(), message.getChunkNo());
-        if (this.receivedChunks.containsKey(msgChunk))
+        System.out.print("GOT chunkmsg " + message.getChunkNo());
+        if (this.receivedChunks.containsKey(msgChunk)) {
+            System.out.println(" and set chunk");
             this.receivedChunks.get(msgChunk).complete(message.getChunk());
+        }
     }
 
     private void handleMsg(DeleteMsg message) {
