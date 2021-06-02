@@ -306,11 +306,10 @@ public class SockThread implements Runnable {
                 socketChannel.close();
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            System.err.println("Handshake failed (accept con)");
             try {
                 socketChannel.close();
-            } catch (IOException ioException) {
-                ioException.printStackTrace();
+            } catch (IOException ignored) {
             }
         }
     }
